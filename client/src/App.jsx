@@ -1280,7 +1280,7 @@ function DiscordDashboard({ onBack }) {
                   <input
                     type="number"
                     min="0"
-                    max="14"
+                    max="3"
                     value={weatherConfig.days_before}
                     onChange={(e) => setWeatherConfig({ ...weatherConfig, days_before: e.target.value })}
                     disabled={isLoading}

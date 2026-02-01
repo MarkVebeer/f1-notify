@@ -472,7 +472,7 @@ app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => 
     if (Number.isNaN(Number(days_before)) || Number.isNaN(Number(hour))) {
       return res.status(400).json({ error: 'Invalid numeric values' });
     }
-    const daysValue = Math.max(0, Math.min(14, Number(days_before)));
+    const daysValue = Math.max(0, Math.min(3, Number(days_before)));
     const hourValue = Math.max(0, Math.min(23, Number(hour)));
 
     await discordDb.upsertWeatherConfig({
