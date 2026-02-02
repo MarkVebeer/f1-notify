@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { syncCalendar } = require('./icsParser');
 const { runDiscordNotifications } = require('./discordWorker');
-const { runWeatherNotifications } = require('./weatherWorker');
+const { runWeatherNotifications, runRaceDayWeatherNotifications } = require('./weatherWorker');
 
 function startScheduler() {
   // Run calendar sync every hour at minute 0
@@ -20,6 +20,7 @@ function startScheduler() {
     try {
       await runDiscordNotifications();
       await runWeatherNotifications();
+      await runRaceDayWeatherNotifications();
     } catch (error) {
       console.error('Discord notification check failed:', error);
     }

@@ -465,7 +465,7 @@ app.post('/api/discord/config', requireDiscordAuth, async (req, res) => {
 
 app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => {
   try {
-    const { guild_id, days_before, hour, enabled } = req.body;
+    const { guild_id, days_before, hour, enabled, race_day_lead_minutes } = req.body;
     if (!guild_id || days_before === undefined || hour === undefined) {
       return res.status(400).json({ error: 'Missing fields' });
     }
@@ -474,12 +474,21 @@ app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => 
     }
     const daysValue = Math.max(0, Math.min(3, Number(days_before)));
     const hourValue = Math.max(0, Math.min(23, Number(hour)));
+    
+    let raceDayLeadValue = null;
+    if (race_day_lead_minutes !== undefined && race_day_lead_minutes !== null && race_day_lead_minutes !== '') {
+      const parsedMinutes = Number(race_day_lead_minutes);
+      if (!Number.isNaN(parsedMinutes) && parsedMinutes > 0) {
+        raceDayLeadValue = Math.max(5, Math.min(1440, parsedMinutes)); // 5 perc és 24 óra között
+      }
+    }
 
     await discordDb.upsertWeatherConfig({
       guild_id,
       days_before: daysValue,
       hour: hourValue,
-      enabled: Boolean(enabled)
+      enabled: Boolean(enabled),
+      race_day_lead_minutes: raceDayLeadValue
     });
 
     res.json({ success: true });

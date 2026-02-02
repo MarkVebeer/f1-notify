@@ -66,6 +66,7 @@ function initDiscordDatabase() {
                 days_before INTEGER NOT NULL DEFAULT 1,
                 hour INTEGER NOT NULL DEFAULT 18,
                 enabled INTEGER NOT NULL DEFAULT 0,
+                race_day_lead_minutes INTEGER,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
               )
@@ -83,16 +84,29 @@ function initDiscordDatabase() {
               `, (weatherLogErr) => {
                 if (weatherLogErr) return reject(weatherLogErr);
 
-                // Migration: Add role_id column if it doesn't exist
-                addRoleIdColumn()
-                  .then(() => addRoleMapColumn())
-                  .then(() => addLeadMinutesToLog())
-                  .then(() => addEventTypesColumn())
-                  .then(() => resolve())
-                  .catch((err) => {
-                    console.warn('Migration warning (safe to ignore):', err.message);
-                    resolve(); // Continue even if column exists
-                  });
+                discordDb.run(`
+                  CREATE TABLE IF NOT EXISTS discord_race_day_weather_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    race_date TEXT NOT NULL,
+                    scheduled_for TEXT NOT NULL,
+                    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                  )
+                `, (raceDayWeatherLogErr) => {
+                  if (raceDayWeatherLogErr) return reject(raceDayWeatherLogErr);
+
+                  // Migration: Add role_id column if it doesn't exist
+                  addRoleIdColumn()
+                    .then(() => addRoleMapColumn())
+                    .then(() => addLeadMinutesToLog())
+                    .then(() => addEventTypesColumn())
+                    .then(() => addRaceDayLeadMinutesColumn())
+                    .then(() => resolve())
+                    .catch((err) => {
+                      console.warn('Migration warning (safe to ignore):', err.message);
+                      resolve(); // Continue even if column exists
+                    });
+                });
               });
             });
           });
@@ -173,6 +187,26 @@ function addLeadMinutesToLog() {
         discordDb.run("ALTER TABLE discord_notify_log ADD COLUMN lead_minutes INTEGER DEFAULT 0", (err) => {
           if (err) return reject(err);
           console.log('Successfully added lead_minutes column to discord_notify_log');
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+// Migration: Add race_day_lead_minutes to weather_settings
+function addRaceDayLeadMinutesColumn() {
+  return new Promise((resolve, reject) => {
+    discordDb.all("PRAGMA table_info(discord_weather_settings)", (err, columns) => {
+      if (err) return reject(err);
+      
+      const hasRaceDayLeadMinutes = columns.some(col => col.name === 'race_day_lead_minutes');
+      if (!hasRaceDayLeadMinutes) {
+        discordDb.run("ALTER TABLE discord_weather_settings ADD COLUMN race_day_lead_minutes INTEGER", (err) => {
+          if (err) return reject(err);
+          console.log('Successfully added race_day_lead_minutes column to discord_weather_settings');
           resolve();
         });
       } else {
@@ -362,20 +396,21 @@ function clearNotificationsByGuild(guild_id) {
   });
 }
 
-function upsertWeatherConfig({ guild_id, days_before, hour, enabled }) {
+function upsertWeatherConfig({ guild_id, days_before, hour, enabled, race_day_lead_minutes }) {
   return new Promise((resolve, reject) => {
     const stmt = discordDb.prepare(`
-      INSERT INTO discord_weather_settings (guild_id, days_before, hour, enabled, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO discord_weather_settings (guild_id, days_before, hour, enabled, race_day_lead_minutes, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(guild_id) DO UPDATE SET
         days_before = excluded.days_before,
         hour = excluded.hour,
         enabled = excluded.enabled,
+        race_day_lead_minutes = excluded.race_day_lead_minutes,
         updated_at = CURRENT_TIMESTAMP
     `);
 
     const enabledValue = enabled ? 1 : 0;
-    stmt.run(guild_id, days_before, hour, enabledValue, function(err) {
+    stmt.run(guild_id, days_before, hour, enabledValue, race_day_lead_minutes || null, function(err) {
       if (err) reject(err);
       else resolve(this.lastID);
     });
@@ -431,6 +466,35 @@ function logWeatherNotification({ guild_id, weekend_key, scheduled_for }) {
   });
 }
 
+function wasRaceDayWeatherNotified({ guild_id, race_date }) {
+  return new Promise((resolve, reject) => {
+    discordDb.get(
+      'SELECT id FROM discord_race_day_weather_log WHERE guild_id = ? AND race_date = ? LIMIT 1',
+      [guild_id, race_date],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(Boolean(row));
+      }
+    );
+  });
+}
+
+function logRaceDayWeatherNotification({ guild_id, race_date, scheduled_for }) {
+  return new Promise((resolve, reject) => {
+    const stmt = discordDb.prepare(`
+      INSERT INTO discord_race_day_weather_log (guild_id, race_date, scheduled_for)
+      VALUES (?, ?, ?)
+    `);
+
+    stmt.run(guild_id, race_date, scheduled_for, function(err) {
+      if (err) reject(err);
+      else resolve(this.lastID);
+    });
+
+    stmt.finalize();
+  });
+}
+
 module.exports = {
   initDiscordDatabase,
   upsertDiscordUser,
@@ -449,5 +513,7 @@ module.exports = {
   getWeatherConfigByGuild,
   getWeatherConfigs,
   wasWeatherNotified,
-  logWeatherNotification
+  logWeatherNotification,
+  wasRaceDayWeatherNotified,
+  logRaceDayWeatherNotification
 };

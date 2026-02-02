@@ -352,4 +352,90 @@ async function sendWeatherNotificationNow(guildId) {
   return { weekendName: nextWeekend.name };
 }
 
-module.exports = { runWeatherNotifications, sendWeatherNotificationNow };
+async function runRaceDayWeatherNotifications() {
+  try {
+    const weatherConfigs = await discordDb.getWeatherConfigs();
+    if (!weatherConfigs.length) {
+      return;
+    }
+
+    const configs = await discordDb.getDiscordConfigs();
+    const configMap = new Map(configs.map((config) => [config.guild_id, config]));
+
+    const events = await db.getAllEvents();
+    if (!events.length) {
+      return;
+    }
+
+    const now = new Date();
+
+    for (const weatherConfig of weatherConfigs) {
+      if (!weatherConfig.race_day_lead_minutes) {
+        continue;
+      }
+
+      const config = configMap.get(weatherConfig.guild_id);
+      if (!config) {
+        continue;
+      }
+
+      const timeZone = config.timezone || 'UTC';
+      const grouped = groupRacesByName(events.filter((event) => new Date(event.date) >= now));
+
+      for (const [raceName, raceEvents] of grouped.entries()) {
+        const todayDateString = getLocalDateString(now, timeZone);
+        const eventsToday = raceEvents.filter((event) => {
+          const eventDateString = getLocalDateString(new Date(event.date), timeZone);
+          return eventDateString === todayDateString;
+        });
+
+        if (eventsToday.length === 0) {
+          continue;
+        }
+
+        eventsToday.sort((a, b) => new Date(a.date) - new Date(b.date));
+        const firstEvent = eventsToday[0];
+        const firstEventTime = new Date(firstEvent.date);
+
+        const scheduledTime = new Date(firstEventTime.getTime() - weatherConfig.race_day_lead_minutes * 60000);
+        const windowEnd = new Date(scheduledTime.getTime() + WORKER_INTERVAL_MS);
+
+        if (now < scheduledTime || now >= windowEnd) {
+          continue;
+        }
+
+        const alreadySent = await discordDb.wasRaceDayWeatherNotified({
+          guild_id: weatherConfig.guild_id,
+          race_date: todayDateString
+        });
+
+        if (alreadySent) {
+          continue;
+        }
+
+        try {
+          const { embed } = await buildWeekendWeatherEmbed({
+            weekendRaces: raceEvents,
+            config
+          });
+
+          await sendChannelMessage(config.channel_id, embed);
+          
+          await discordDb.logRaceDayWeatherNotification({
+            guild_id: weatherConfig.guild_id,
+            race_date: todayDateString,
+            scheduled_for: scheduledTime.toISOString()
+          });
+
+          console.log(`Race-day weather notification sent for ${raceName} in guild ${weatherConfig.guild_id}`);
+        } catch (error) {
+          console.error(`Failed to send race-day weather notification for ${raceName}:`, error.message || error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Race-day weather notification worker error:', error.message || error);
+  }
+}
+
+module.exports = { runWeatherNotifications, runRaceDayWeatherNotifications, sendWeatherNotificationNow };

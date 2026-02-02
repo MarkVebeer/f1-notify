@@ -844,7 +844,8 @@ function DiscordDashboard({ onBack }) {
   const [weatherConfig, setWeatherConfig] = useState({
     enabled: false,
     days_before: 1,
-    hour: 18
+    hour: 18,
+    race_day_lead_minutes: ''
   })
 
   const showToast = (message, type = 'success') => {
@@ -975,10 +976,11 @@ function DiscordDashboard({ onBack }) {
         setWeatherConfig({
           enabled: Boolean(response.data.enabled),
           days_before: response.data.days_before ?? 1,
-          hour: response.data.hour ?? 18
+          hour: response.data.hour ?? 18,
+          race_day_lead_minutes: response.data.race_day_lead_minutes ?? ''
         })
       } else {
-        setWeatherConfig({ enabled: false, days_before: 1, hour: 18 })
+        setWeatherConfig({ enabled: false, days_before: 1, hour: 18, race_day_lead_minutes: '' })
       }
     } catch {
       setStatus('Nem sikerült betölteni az időjárás értesítéseket.')
@@ -1105,7 +1107,8 @@ function DiscordDashboard({ onBack }) {
         guild_id: selectedGuildId,
         days_before: Number(weatherConfig.days_before),
         hour: Number(weatherConfig.hour),
-        enabled: Boolean(weatherConfig.enabled)
+        enabled: Boolean(weatherConfig.enabled),
+        race_day_lead_minutes: weatherConfig.race_day_lead_minutes ? Number(weatherConfig.race_day_lead_minutes) : null
       })
       showToast('Időjárás értesítés beállítva!', 'success')
       await fetchWeatherConfig(selectedGuildId)
@@ -1301,6 +1304,21 @@ function DiscordDashboard({ onBack }) {
                   />
                   <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
                     Az időzónát az alapbeállításokból használjuk.
+                  </small>
+                </div>
+                <div className="form-row">
+                  <label>Verseny napi értesítés (perc)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="1440"
+                    placeholder="Opcionális"
+                    value={weatherConfig.race_day_lead_minutes}
+                    onChange={(e) => setWeatherConfig({ ...weatherConfig, race_day_lead_minutes: e.target.value })}
+                    disabled={isLoading}
+                  />
+                  <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
+                    Az esemény napján az első verseny előtt hány perccel küldjön időjárás értesítést (5-1440 perc). Hagyd üresen a kikapcsoláshoz.
                   </small>
                 </div>
                 <button className="primary-button" type="submit" disabled={isLoading}>
