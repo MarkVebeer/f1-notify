@@ -53,7 +53,7 @@ async function fetchBasicDayForecast({ lat, lon, asl, tz, name }) {
   return response.data;
 }
 
-function buildMeteogramImageUrl({ lat, lon, asl, tz, name, forecastDays = 1 }) {
+function buildMeteogramImageUrl({ lat, lon, asl, tz, name, forecastDays = 1, time = null }) {
   const apikey = getApiKey();
   const params = new URLSearchParams({
     lat,
@@ -70,6 +70,9 @@ function buildMeteogramImageUrl({ lat, lon, asl, tz, name, forecastDays = 1 }) {
   }
   if (name) {
     params.set('location_name', name);
+  }
+  if (time) {
+    params.set('time', time);
   }
 
   return `https://my.meteoblue.com/images/meteogram?${params.toString()}`;

@@ -465,16 +465,11 @@ app.post('/api/discord/config', requireDiscordAuth, async (req, res) => {
 
 app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => {
   try {
-    const { guild_id, days_before, hour, enabled, race_day_lead_minutes } = req.body;
-    if (!guild_id || days_before === undefined || hour === undefined) {
-      return res.status(400).json({ error: 'Missing fields' });
+    const { guild_id, enabled, race_day_lead_minutes } = req.body;
+    if (!guild_id) {
+      return res.status(400).json({ error: 'Missing guild_id' });
     }
-    if (Number.isNaN(Number(days_before)) || Number.isNaN(Number(hour))) {
-      return res.status(400).json({ error: 'Invalid numeric values' });
-    }
-    const daysValue = Math.max(0, Math.min(3, Number(days_before)));
-    const hourValue = Math.max(0, Math.min(23, Number(hour)));
-    
+
     let raceDayLeadValue = null;
     if (race_day_lead_minutes !== undefined && race_day_lead_minutes !== null && race_day_lead_minutes !== '') {
       const parsedMinutes = Number(race_day_lead_minutes);
@@ -483,11 +478,12 @@ app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => 
       }
     }
 
+    // String vagy bool konverzió
+    const enabledValue = enabled === 'true' ? true : Boolean(enabled);
+
     await discordDb.upsertWeatherConfig({
       guild_id,
-      days_before: daysValue,
-      hour: hourValue,
-      enabled: Boolean(enabled),
+      enabled: enabledValue,
       race_day_lead_minutes: raceDayLeadValue
     });
 

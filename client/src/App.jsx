@@ -843,8 +843,6 @@ function DiscordDashboard({ onBack }) {
   })
   const [weatherConfig, setWeatherConfig] = useState({
     enabled: false,
-    days_before: 1,
-    hour: 18,
     race_day_lead_minutes: ''
   })
 
@@ -974,13 +972,11 @@ function DiscordDashboard({ onBack }) {
       const response = await axios.get(`/api/discord/weather-config/${guildId}`)
       if (response.data) {
         setWeatherConfig({
-          enabled: Boolean(response.data.enabled),
-          days_before: response.data.days_before ?? 1,
-          hour: response.data.hour ?? 18,
+          enabled: response.data.enabled ? true : false,
           race_day_lead_minutes: response.data.race_day_lead_minutes ?? ''
         })
       } else {
-        setWeatherConfig({ enabled: false, days_before: 1, hour: 18, race_day_lead_minutes: '' })
+        setWeatherConfig({ enabled: false, race_day_lead_minutes: '' })
       }
     } catch {
       setStatus('Nem sikerült betölteni az időjárás értesítéseket.')
@@ -1105,8 +1101,6 @@ function DiscordDashboard({ onBack }) {
     try {
       await axios.post('/api/discord/weather-config', {
         guild_id: selectedGuildId,
-        days_before: Number(weatherConfig.days_before),
-        hour: Number(weatherConfig.hour),
         enabled: Boolean(weatherConfig.enabled),
         race_day_lead_minutes: weatherConfig.race_day_lead_minutes ? Number(weatherConfig.race_day_lead_minutes) : null
       })
@@ -1264,7 +1258,7 @@ function DiscordDashboard({ onBack }) {
               <div className="admin-card-header">
                 <h2>🌦️ Időjárás értesítés</h2>
               </div>
-              <p className="muted">A következő versenyhétvége 3 napos előrejelzését küldi el a beállított csatornára.</p>
+              <p className="muted">Az első verseny napjának éjféle után elküldi a teljes versenyhétvégére szóló 3 napos előrejelzést.</p>
               <form onSubmit={saveWeatherConfig}>
                 <div className="form-row">
                   <label>Aktív</label>
@@ -1275,36 +1269,8 @@ function DiscordDashboard({ onBack }) {
                       onChange={(e) => setWeatherConfig({ ...weatherConfig, enabled: e.target.checked })}
                       disabled={isLoading}
                     />
-                    <span className="checkbox-text">Időjárás értesítés bekapcsolása</span>
+                    <span className="checkbox-text">Hétvégés időjárás értesítés bekapcsolása</span>
                   </label>
-                </div>
-                <div className="form-row">
-                  <label>Hány nappal előtte</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="3"
-                    value={weatherConfig.days_before}
-                    onChange={(e) => setWeatherConfig({ ...weatherConfig, days_before: e.target.value })}
-                    disabled={isLoading}
-                  />
-                  <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                    A hétvége első napjához képest számítva.
-                  </small>
-                </div>
-                <div className="form-row">
-                  <label>Küldés órája (0-23)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="23"
-                    value={weatherConfig.hour}
-                    onChange={(e) => setWeatherConfig({ ...weatherConfig, hour: e.target.value })}
-                    disabled={isLoading}
-                  />
-                  <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                    Az időzónát az alapbeállításokból használjuk.
-                  </small>
                 </div>
                 <div className="form-row">
                   <label>Verseny napi értesítés (perc)</label>

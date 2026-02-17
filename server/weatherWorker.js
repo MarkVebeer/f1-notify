@@ -4,7 +4,8 @@ const discordDb = require('./discordDb');
 const { sendChannelMessage } = require('./discordService');
 const { searchLocation, fetchBasicDayForecast, pickDayForecast, buildMeteogramImageUrl } = require('./meteoblueService');
 
-const WORKER_INTERVAL_MS = 60 * 1000;
+// 5 perc az értesítés ablak, hogy biztos elküldódjon
+const WORKER_INTERVAL_MS = 5 * 60 * 1000;
 
 function pad2(value) {
   return String(value).padStart(2, '0');
@@ -75,6 +76,30 @@ function getLocalDateString(date, timeZone) {
   return formatDateParts(parts);
 }
 
+function getTimeZoneOffsetDifference(tz1, tz2) {
+  const now = new Date();
+  const offset1 = getTimeZoneOffset(now, tz1); // minutes
+  const offset2 = getTimeZoneOffset(now, tz2); // minutes
+  const diffMinutes = offset2 - offset1;
+  const hours = Math.floor(Math.abs(diffMinutes) / 60);
+  const minutes = Math.abs(diffMinutes) % 60;
+  
+  let str = '';
+  if (diffMinutes > 0) {
+    str = `+${hours}`;
+  } else if (diffMinutes < 0) {
+    str = `-${hours}`;
+  } else {
+    str = '0';
+  }
+  
+  if (minutes > 0) {
+    str += `:${String(minutes).padStart(2, '0')}`;
+  }
+  
+  return { hours, minutes, diffMinutes, str };
+}
+
 function average(values) {
   if (!values.length) return null;
   const sum = values.reduce((acc, val) => acc + val, 0);
@@ -140,18 +165,21 @@ function pickNextWeekend(groupedRaces) {
   return nextWeekend;
 }
 
-async function buildWeekendWeatherEmbed({ weekendRaces, config }) {
-  const timeZone = config.timezone || 'UTC';
+async function buildWeekendWeatherEmbed({ weekendRaces, config, eventTimeZone = 'UTC' }) {
   const sortedEvents = [...weekendRaces].sort((a, b) => new Date(a.date) - new Date(b.date));
   const firstEvent = sortedEvents[0];
-  const startDateParts = getDatePartsInTimeZone(new Date(firstEvent.date), timeZone);
+  
+  // Use event's timezone for date parts (for correct meteogram image)
+  const startDateParts = getDatePartsInTimeZone(new Date(firstEvent.date), eventTimeZone);
   const lastEvent = sortedEvents[sortedEvents.length - 1];
-  const endDateParts = getDatePartsInTimeZone(new Date(lastEvent.date), timeZone);
+  const endDateParts = getDatePartsInTimeZone(new Date(lastEvent.date), eventTimeZone);
 
   const startDate = formatDateParts(startDateParts);
-  const startUtc = Date.UTC(startDateParts.year, startDateParts.month - 1, startDateParts.day);
-  const endUtc = Date.UTC(endDateParts.year, endDateParts.month - 1, endDateParts.day);
-  const daysBetween = Math.max(0, Math.round((endUtc - startUtc) / 86400000));
+  // Calculate days between using date parts, not UTC (which would cause timezone offset issues)
+  const daysDiff = Math.round((endDateParts.day - startDateParts.day) + 
+    (endDateParts.month - startDateParts.month) * 30 + 
+    (endDateParts.year - startDateParts.year) * 365);
+  const daysBetween = Math.max(0, daysDiff);
 
   const weekendDates = [];
   for (let i = 0; i <= daysBetween; i += 1) {
@@ -202,13 +230,18 @@ async function buildWeekendWeatherEmbed({ weekendRaces, config }) {
     ? `${weekendDates[0]} – ${weekendDates[weekendDates.length - 1]}`
     : weekendDates[0];
 
+  // Generate time parameter for meteogram: YYYYMMDDHH in user's timezone
+  // Using first event's date at 12:00 in user's timezone
+  const timeParam = `${startDateParts.year}${String(startDateParts.month).padStart(2, '0')}${String(startDateParts.day).padStart(2, '0')}12`;
+
   const meteogramUrl = buildMeteogramImageUrl({
     lat: location.lat,
     lon: location.lon,
     asl: location.asl,
     tz: location.timezone,
     name: location.name,
-    forecastDays: weekendDates.length
+    forecastDays: weekendDates.length,
+    time: timeParam
   });
 
   const avgPrecipitation = average(dayForecasts.map((item) => item.values.precipitation_sum || item.values.precipitation).filter((val) => val !== undefined));
@@ -229,9 +262,21 @@ async function buildWeekendWeatherEmbed({ weekendRaces, config }) {
     formatValue(maxWind, windspeedUnit)
   ].join(' • ');
 
+  // Calculate timezone offset difference between event TZ and config TZ
+  const userTimeZone = config.timezone || 'UTC';
+  let tzNote = '';
+  if (eventTimeZone !== userTimeZone) {
+    const tzDiff = getTimeZoneOffsetDifference(eventTimeZone, userTimeZone);
+    if (tzDiff.diffMinutes > 0) {
+      tzNote = `\n📍 Helyszín időzóna: ${eventTimeZone}\n🇭🇺 A te időzónádhoz képest: +${tzDiff.str} óra`;
+    } else if (tzDiff.diffMinutes < 0) {
+      tzNote = `\n📍 Helyszín időzóna: ${eventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
+    }
+  }
+
   const embed = {
     title: `🌦️ ${firstEvent.name} • Hétvégi időjárás`,
-    description: `${locationName}\n${dateRange}`,
+    description: `${locationName}\n${dateRange}${tzNote}`,
     color: 0x4aa3ff,
     fields: [
       { name: 'Hőmérséklet\n(min, max, avg)', value: temperatureText, inline: true },
@@ -239,7 +284,7 @@ async function buildWeekendWeatherEmbed({ weekendRaces, config }) {
       { name: 'Szél\n(avg, max)', value: windText, inline: true }
     ],
     image: { url: meteogramUrl },
-    footer: { text: `meteoblue • ${timeZone}` }
+    footer: { text: `meteoblue • ${eventTimeZone}` }
   };
 
   return { embed, startDate, dateRange };
@@ -252,6 +297,11 @@ async function runWeatherNotifications() {
       return;
     }
 
+    const enabledConfigs = weatherConfigs.filter(c => c.enabled);
+    if (!enabledConfigs.length) {
+      return;
+    }
+
     const configs = await discordDb.getDiscordConfigs();
     const configMap = new Map(configs.map((config) => [config.guild_id, config]));
 
@@ -261,11 +311,7 @@ async function runWeatherNotifications() {
     }
 
     const now = new Date();
-    for (const weatherConfig of weatherConfigs) {
-      if (!weatherConfig.enabled) {
-        continue;
-      }
-
+    for (const weatherConfig of enabledConfigs) {
       const config = configMap.get(weatherConfig.guild_id);
       if (!config) {
         continue;
@@ -278,23 +324,34 @@ async function runWeatherNotifications() {
         continue;
       }
 
-      const timeZone = config.timezone || 'UTC';
-      const startDateParts = getDatePartsInTimeZone(new Date(nextWeekend.startEvent.date), timeZone);
-      const scheduledDateParts = shiftDateParts(startDateParts, -weatherConfig.days_before);
-      const scheduledTimeUtc = zonedTimeToUtc({
-        year: scheduledDateParts.year,
-        month: scheduledDateParts.month,
-        day: scheduledDateParts.day,
-        hour: weatherConfig.hour,
-        minute: 0
-      }, timeZone);
+      // Get location info to determine event's timezone
+      const locationQuery = nextWeekend.startEvent.city
+        ? `${nextWeekend.startEvent.city}, ${nextWeekend.startEvent.location}`
+        : (nextWeekend.startEvent.location || nextWeekend.startEvent.name);
 
-      const windowEnd = new Date(scheduledTimeUtc.getTime() + WORKER_INTERVAL_MS);
-      if (now < scheduledTimeUtc || now >= windowEnd) {
+      let eventTimeZone = 'UTC';
+      try {
+        const location = await searchLocation(locationQuery);
+        eventTimeZone = location.tz || 'UTC';
+      } catch (error) {
+        console.warn(`Could not determine timezone for ${locationQuery}, using UTC`, error.message);
+      }
+
+      // Check if today is the first event day in the EVENT's timezone
+      const firstEventDate = new Date(nextWeekend.startEvent.date);
+      const firstEventDateParts = getDatePartsInTimeZone(firstEventDate, eventTimeZone);
+      const todayDateParts = getDatePartsInTimeZone(now, eventTimeZone);
+
+      const isTodayFirstEventDay = 
+        todayDateParts.year === firstEventDateParts.year &&
+        todayDateParts.month === firstEventDateParts.month &&
+        todayDateParts.day === firstEventDateParts.day;
+
+      if (!isTodayFirstEventDay) {
         continue;
       }
 
-      const weekendKey = `${nextWeekend.name}|${formatDateParts(startDateParts)}`;
+      const weekendKey = `${nextWeekend.name}|${formatDateParts(firstEventDateParts)}`;
       const alreadySent = await discordDb.wasWeatherNotified({
         guild_id: weatherConfig.guild_id,
         weekend_key: weekendKey
@@ -306,17 +363,18 @@ async function runWeatherNotifications() {
       try {
         const { embed } = await buildWeekendWeatherEmbed({
           weekendRaces: nextWeekend.events,
-          config
+          config,
+          eventTimeZone
         });
         await sendChannelMessage(config.channel_id, embed);
         await discordDb.logWeatherNotification({
           guild_id: weatherConfig.guild_id,
           weekend_key: weekendKey,
-          scheduled_for: scheduledTimeUtc.toISOString()
+          scheduled_for: now.toISOString()
         });
-        console.log(`Weather notification sent for ${nextWeekend.name} in guild ${weatherConfig.guild_id}`);
+        console.log(`🌦️ ${nextWeekend.name} • ${config.channel_id}`);
       } catch (error) {
-        console.error(`Failed to send weather notification for ${nextWeekend.name}:`, error.message || error);
+        console.error(`❌ Weather failed for ${nextWeekend.name}:`, error.message || error);
       }
     }
   } catch (error) {
@@ -343,9 +401,23 @@ async function sendWeatherNotificationNow(guildId) {
     throw new Error('No upcoming race weekend found');
   }
 
+  // Get location info to determine event's timezone
+  const locationQuery = nextWeekend.startEvent.city
+    ? `${nextWeekend.startEvent.city}, ${nextWeekend.startEvent.location}`
+    : (nextWeekend.startEvent.location || nextWeekend.startEvent.name);
+
+  let eventTimeZone = 'UTC';
+  try {
+    const location = await searchLocation(locationQuery);
+    eventTimeZone = location.tz || 'UTC';
+  } catch (error) {
+    console.warn(`Could not determine timezone for ${locationQuery}, using UTC`, error.message);
+  }
+
   const { embed } = await buildWeekendWeatherEmbed({
     weekendRaces: nextWeekend.events,
-    config
+    config,
+    eventTimeZone
   });
 
   await sendChannelMessage(config.channel_id, embed);
@@ -359,6 +431,11 @@ async function runRaceDayWeatherNotifications() {
       return;
     }
 
+    const enabledWithLeadTime = weatherConfigs.filter(c => c.enabled && c.race_day_lead_minutes);
+    if (!enabledWithLeadTime.length) {
+      return;
+    }
+
     const configs = await discordDb.getDiscordConfigs();
     const configMap = new Map(configs.map((config) => [config.guild_id, config]));
 
@@ -369,11 +446,7 @@ async function runRaceDayWeatherNotifications() {
 
     const now = new Date();
 
-    for (const weatherConfig of weatherConfigs) {
-      if (!weatherConfig.race_day_lead_minutes) {
-        continue;
-      }
-
+    for (const weatherConfig of enabledWithLeadTime) {
       const config = configMap.get(weatherConfig.guild_id);
       if (!config) {
         continue;
@@ -414,9 +487,23 @@ async function runRaceDayWeatherNotifications() {
         }
 
         try {
+          // Get location info to determine event's timezone for race-day weather too
+          const locationQuery = firstEvent.city
+            ? `${firstEvent.city}, ${firstEvent.location}`
+            : (firstEvent.location || firstEvent.name);
+
+          let eventTimeZone = 'UTC';
+          try {
+            const location = await searchLocation(locationQuery);
+            eventTimeZone = location.tz || 'UTC';
+          } catch (error) {
+            console.warn(`Could not determine timezone for ${locationQuery}, using UTC`, error.message);
+          }
+
           const { embed } = await buildWeekendWeatherEmbed({
             weekendRaces: raceEvents,
-            config
+            config,
+            eventTimeZone
           });
 
           await sendChannelMessage(config.channel_id, embed);
@@ -427,9 +514,9 @@ async function runRaceDayWeatherNotifications() {
             scheduled_for: scheduledTime.toISOString()
           });
 
-          console.log(`Race-day weather notification sent for ${raceName} in guild ${weatherConfig.guild_id}`);
+          console.log(`🌦️ ${raceName} • ${todayDateString} • ${config.channel_id}`);
         } catch (error) {
-          console.error(`Failed to send race-day weather notification for ${raceName}:`, error.message || error);
+          console.error(`❌ Race-day weather failed for ${raceName}:`, error.message || error);
         }
       }
     }

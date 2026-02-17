@@ -398,6 +398,10 @@ function clearNotificationsByGuild(guild_id) {
 
 function upsertWeatherConfig({ guild_id, days_before, hour, enabled, race_day_lead_minutes }) {
   return new Promise((resolve, reject) => {
+    // Default values for backward compatibility
+    const daysValue = days_before !== undefined && days_before !== null ? days_before : 0;
+    const hourValue = hour !== undefined && hour !== null ? hour : 0;
+    
     const stmt = discordDb.prepare(`
       INSERT INTO discord_weather_settings (guild_id, days_before, hour, enabled, race_day_lead_minutes, updated_at)
       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -410,7 +414,7 @@ function upsertWeatherConfig({ guild_id, days_before, hour, enabled, race_day_le
     `);
 
     const enabledValue = enabled ? 1 : 0;
-    stmt.run(guild_id, days_before, hour, enabledValue, race_day_lead_minutes || null, function(err) {
+    stmt.run(guild_id, daysValue, hourValue, enabledValue, race_day_lead_minutes || null, function(err) {
       if (err) reject(err);
       else resolve(this.lastID);
     });
@@ -423,7 +427,11 @@ function getWeatherConfigByGuild(guild_id) {
   return new Promise((resolve, reject) => {
     discordDb.get('SELECT * FROM discord_weather_settings WHERE guild_id = ?', [guild_id], (err, row) => {
       if (err) reject(err);
-      else resolve(row ? { ...row, enabled: Boolean(row.enabled) } : null);
+      else resolve(row ? { 
+        ...row, 
+        enabled: Boolean(row.enabled),
+        race_day_lead_minutes: row.race_day_lead_minutes || null
+      } : null);
     });
   });
 }
@@ -432,7 +440,11 @@ function getWeatherConfigs() {
   return new Promise((resolve, reject) => {
     discordDb.all('SELECT * FROM discord_weather_settings', (err, rows) => {
       if (err) reject(err);
-      else resolve(rows.map(row => ({ ...row, enabled: Boolean(row.enabled) })));
+      else resolve(rows.map(row => ({ 
+        ...row, 
+        enabled: Boolean(row.enabled),
+        race_day_lead_minutes: row.race_day_lead_minutes || null
+      })));
     });
   });
 }
