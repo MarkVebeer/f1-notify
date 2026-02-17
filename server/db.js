@@ -12,6 +12,11 @@ function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         location TEXT,
+        city TEXT,
+        circuit_name TEXT,
+        lat REAL,
+        lon REAL,
+        timezone TEXT,
         date TEXT NOT NULL,
         type TEXT,
         ics_uid TEXT UNIQUE,
@@ -38,6 +43,8 @@ function initDatabase() {
         addRawSummaryColumn();
         // Add city and circuit_name columns if they don't exist
         addCityAndCircuitColumns();
+        // Add lat/lon/timezone columns if they don't exist
+        addLatLonTimezoneColumns();
         resolve();
       });
     });
@@ -98,6 +105,50 @@ function addCityAndCircuitColumns() {
   });
 }
 
+// Add lat, lon, and timezone columns if they don't exist
+function addLatLonTimezoneColumns() {
+  db.all("PRAGMA table_info(races)", (err, columns) => {
+    if (err) {
+      console.error('Error checking table structure:', err);
+      return;
+    }
+
+    const hasLat = columns.some(col => col.name === 'lat');
+    const hasLon = columns.some(col => col.name === 'lon');
+    const hasTimezone = columns.some(col => col.name === 'timezone');
+
+    if (!hasLat) {
+      db.run("ALTER TABLE races ADD COLUMN lat REAL", (err) => {
+        if (err) {
+          console.error('Error adding lat column:', err);
+        } else {
+          console.log('Successfully added lat column');
+        }
+      });
+    }
+
+    if (!hasLon) {
+      db.run("ALTER TABLE races ADD COLUMN lon REAL", (err) => {
+        if (err) {
+          console.error('Error adding lon column:', err);
+        } else {
+          console.log('Successfully added lon column');
+        }
+      });
+    }
+
+    if (!hasTimezone) {
+      db.run("ALTER TABLE races ADD COLUMN timezone TEXT", (err) => {
+        if (err) {
+          console.error('Error adding timezone column:', err);
+        } else {
+          console.log('Successfully added timezone column');
+        }
+      });
+    }
+  });
+}
+
 // Get all races
 function getAllRaces() {
   return new Promise((resolve, reject) => {
@@ -113,10 +164,10 @@ function getAllEvents() {
   return new Promise((resolve, reject) => {
     db.all(
       `
-        SELECT id, name, location, city, circuit_name, date, type, created_at, 'race' as source
+        SELECT id, name, location, city, circuit_name, lat, lon, timezone, date, type, created_at, 'race' as source
         FROM races
         UNION ALL
-        SELECT id, name, location, NULL as city, NULL as circuit_name, date, type, created_at, 'custom' as source
+        SELECT id, name, location, NULL as city, NULL as circuit_name, NULL as lat, NULL as lon, NULL as timezone, date, type, created_at, 'custom' as source
         FROM custom_events
         ORDER BY date ASC
       `,
@@ -129,14 +180,14 @@ function getAllEvents() {
 }
 
 // Add a race
-function addRace({ name, location, date, type, ics_uid, raw_summary, city, circuit_name }) {
+function addRace({ name, location, date, type, ics_uid, raw_summary, city, circuit_name, lat, lon, timezone }) {
   return new Promise((resolve, reject) => {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO races (name, location, date, type, ics_uid, raw_summary, city, circuit_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO races (name, location, date, type, ics_uid, raw_summary, city, circuit_name, lat, lon, timezone)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    stmt.run(name, location, date, type, ics_uid, raw_summary || null, city || null, circuit_name || null, function(err) {
+    stmt.run(name, location, date, type, ics_uid, raw_summary || null, city || null, circuit_name || null, lat ?? null, lon ?? null, timezone || null, function(err) {
       if (err) reject(err);
       else resolve(this.lastID);
     });
@@ -186,11 +237,11 @@ function getUpcomingEvents(windowHours = 72) {
     const until = new Date(now.getTime() + windowHours * 60 * 60 * 1000);
     db.all(
       `
-        SELECT id, name, location, date, type, created_at, 'race' as source
+        SELECT id, name, location, city, circuit_name, lat, lon, timezone, date, type, created_at, 'race' as source
         FROM races
         WHERE date BETWEEN ? AND ?
         UNION ALL
-        SELECT id, name, location, date, type, created_at, 'custom' as source
+        SELECT id, name, location, NULL as city, NULL as circuit_name, NULL as lat, NULL as lon, NULL as timezone, date, type, created_at, 'custom' as source
         FROM custom_events
         WHERE date BETWEEN ? AND ?
         ORDER BY date ASC

@@ -2,12 +2,13 @@ const axios = require('axios');
 const ical = require('node-ical');
 const db = require('./db');
 const countries = require('i18n-iso-countries');
+const tzLookup = require('tz-lookup');
 
 // Register English language for country name lookups
 countries.registerLocale(require('i18n-iso-countries/langs/en.json'));
 
 const ICS_URL = 'https://ics.ecal.com/ecal-sub/697a869dcce5a200022989fc/Formula%201.ics';
-const LOCATIONS_URL = 'https://raw.githubusercontent.com/bacinger/f1-circuits/refs/heads/master/f1-locations.json';
+const LOCATIONS_URL = process.env.F1_LOCATIONS_URL || 'https://raw.githubusercontent.com/bacinger/f1-circuits/refs/heads/master/f1-locations.json';
 
 let cachedLocations = null;
 
@@ -72,7 +73,9 @@ function matchLocation(eventName, eventLocation, locationsData) {
       return {
         country: eventLocation,
         city: circuit.location,
-        circuit_name: circuit.name
+        circuit_name: circuit.name,
+        lat: circuit.lat,
+        lon: circuit.lon
       };
     }
   }
@@ -81,7 +84,9 @@ function matchLocation(eventName, eventLocation, locationsData) {
   return {
     country: eventLocation,
     city: null,
-    circuit_name: null
+    circuit_name: null,
+    lat: null,
+    lon: null
   };
 }
 
@@ -148,11 +153,23 @@ function processAndGroupEvents(events, locationsData = []) {
       const originalLocation = (event.location || '').trim();
       const locationMatch = matchLocation(cleanedName, originalLocation, locationsData);
       
+      let timezone = null;
+      if (locationMatch.lat !== null && locationMatch.lat !== undefined && locationMatch.lon !== null && locationMatch.lon !== undefined) {
+        try {
+          timezone = tzLookup(locationMatch.lat, locationMatch.lon);
+        } catch (error) {
+          console.warn('Failed to determine timezone for location:', locationMatch.city || locationMatch.country, error.message);
+        }
+      }
+
       const race = {
         name: cleanedName,
         location: locationMatch.country,
         city: locationMatch.city,
         circuit_name: locationMatch.circuit_name,
+        lat: locationMatch.lat ?? null,
+        lon: locationMatch.lon ?? null,
+        timezone,
         date: eventDate.toISOString(),
         type: determineRaceType(summary),
         ics_uid: event.uid || `${Date.now()}-${Math.random()}`,
