@@ -81,7 +81,7 @@ function getTimeZoneOffsetDifference(tz1, tz2) {
   const now = new Date();
   const offset1 = getTimeZoneOffset(now, tz1); // minutes
   const offset2 = getTimeZoneOffset(now, tz2); // minutes
-  const diffMinutes = offset2 - offset1;
+  const diffMinutes = offset1 - offset2;
   const hours = Math.floor(Math.abs(diffMinutes) / 60);
   const minutes = Math.abs(diffMinutes) % 60;
   
@@ -178,6 +178,60 @@ function buildLocationQuery(event) {
   return normalizedCity || normalizedCountry || event.circuit_name || event.name || '';
 }
 
+function buildLocationQueries(event) {
+  if (!event) {
+    return [];
+  }
+
+  const parsedLocation = parseLocationField(event.location);
+  const normalizedCity = event.city || parsedLocation.city;
+  const normalizedCountry = parsedLocation.country || event.location;
+
+  const candidates = [
+    buildLocationQuery(event),
+    normalizedCity && normalizedCountry ? `${normalizedCountry}, ${normalizedCity}` : null,
+    normalizedCity || null,
+    normalizedCountry || null,
+    event.circuit_name || null,
+    event.name || null
+  ]
+    .filter(Boolean)
+    .flatMap((candidate) => {
+      const trimmed = String(candidate).trim();
+      if (!trimmed) {
+        return [];
+      }
+
+      if (trimmed.includes(',')) {
+        return [trimmed, trimmed.replace(/,/g, ' ')];
+      }
+
+      return [trimmed];
+    });
+
+  return [...new Set(candidates)];
+}
+
+async function searchLocationWithFallback(event) {
+  const candidates = buildLocationQueries(event);
+  let lastError = null;
+
+  for (const query of candidates) {
+    try {
+      const location = await searchLocation(query);
+      return { location, query };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error('Location not found');
+}
+
 function resolveEventTimeZone(event) {
   if (!event) {
     return null;
@@ -217,8 +271,7 @@ async function resolveWeatherLocation(event, fallbackTimeZone = 'UTC') {
     };
   }
 
-  const locationQuery = buildLocationQuery(event);
-  const location = await searchLocation(locationQuery);
+  const { location } = await searchLocationWithFallback(event);
   return {
     lat: location.lat,
     lon: location.lon,
@@ -359,7 +412,7 @@ async function buildWeekendWeatherEmbed({ weekendRaces, config, eventTimeZone = 
   if (resolvedEventTimeZone !== userTimeZone) {
     const tzDiff = getTimeZoneOffsetDifference(resolvedEventTimeZone, userTimeZone);
     if (tzDiff.diffMinutes > 0) {
-      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: +${tzDiff.str} óra`;
+      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
     } else if (tzDiff.diffMinutes < 0) {
       tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
     }
@@ -453,7 +506,7 @@ async function buildRaceDayWeatherEmbed({ raceEvents, config, eventTimeZone = nu
   if (resolvedEventTimeZone !== userTimeZone) {
     const tzDiff = getTimeZoneOffsetDifference(resolvedEventTimeZone, userTimeZone);
     if (tzDiff.diffMinutes > 0) {
-      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: +${tzDiff.str} óra`;
+      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
     } else if (tzDiff.diffMinutes < 0) {
       tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
     }
@@ -510,14 +563,13 @@ async function runWeatherNotifications() {
       }
 
       // Get location info to determine event's timezone
-      const locationQuery = buildLocationQuery(nextWeekend.startEvent);
-
       let eventTimeZone = resolveEventTimeZone(nextWeekend.startEvent);
       if (!eventTimeZone) {
         try {
-          const location = await searchLocation(locationQuery);
+          const { location } = await searchLocationWithFallback(nextWeekend.startEvent);
           eventTimeZone = normalizeLocationTimezone(location, 'UTC');
         } catch (error) {
+          const locationQuery = buildLocationQuery(nextWeekend.startEvent);
           console.warn(`Could not determine timezone for ${locationQuery}, using UTC`, error.message);
           eventTimeZone = 'UTC';
         }
@@ -588,14 +640,13 @@ async function sendWeatherNotificationNow(guildId) {
   }
 
   // Get location info to determine event's timezone
-  const locationQuery = buildLocationQuery(nextWeekend.startEvent);
-
   let eventTimeZone = resolveEventTimeZone(nextWeekend.startEvent);
   if (!eventTimeZone) {
     try {
-      const location = await searchLocation(locationQuery);
+      const { location } = await searchLocationWithFallback(nextWeekend.startEvent);
       eventTimeZone = normalizeLocationTimezone(location, 'UTC');
     } catch (error) {
+      const locationQuery = buildLocationQuery(nextWeekend.startEvent);
       console.warn(`Could not determine timezone for ${locationQuery}, using UTC`, error.message);
       eventTimeZone = 'UTC';
     }
@@ -675,14 +726,13 @@ async function runRaceDayWeatherNotifications() {
 
         try {
           // Get location info to determine event's timezone for race-day weather too
-          const locationQuery = buildLocationQuery(firstEvent);
-
           let eventTimeZone = resolveEventTimeZone(firstEvent);
           if (!eventTimeZone) {
             try {
-              const location = await searchLocation(locationQuery);
+              const { location } = await searchLocationWithFallback(firstEvent);
               eventTimeZone = normalizeLocationTimezone(location, 'UTC');
             } catch (error) {
+              const locationQuery = buildLocationQuery(firstEvent);
               console.warn(`Could not determine timezone for ${locationQuery}, using UTC`, error.message);
               eventTimeZone = 'UTC';
             }
