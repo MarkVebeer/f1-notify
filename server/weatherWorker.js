@@ -142,16 +142,40 @@ function normalizeLocationTimezone(location, fallback = 'UTC') {
   return location?.timezone || location?.tz || fallback || 'UTC';
 }
 
+function parseLocationField(locationValue) {
+  if (!locationValue || typeof locationValue !== 'string') {
+    return { country: null, city: null };
+  }
+
+  const parts = locationValue
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length < 2) {
+    return { country: null, city: null };
+  }
+
+  return {
+    country: parts[0] || null,
+    city: parts[1] || null
+  };
+}
+
 function buildLocationQuery(event) {
   if (!event) {
     return '';
   }
 
-  if (event.city && event.location) {
-    return `${event.city}, ${event.location}`;
+  const parsedLocation = parseLocationField(event.location);
+  const normalizedCity = event.city || parsedLocation.city;
+  const normalizedCountry = parsedLocation.country || event.location;
+
+  if (normalizedCity && normalizedCountry) {
+    return `${normalizedCity}, ${normalizedCountry}`;
   }
 
-  return event.location || event.city || event.circuit_name || event.name || '';
+  return normalizedCity || normalizedCountry || event.circuit_name || event.name || '';
 }
 
 function resolveEventTimeZone(event) {
@@ -175,7 +199,8 @@ function resolveEventTimeZone(event) {
 }
 
 function buildFallbackLocationName(event) {
-  return event?.circuit_name || event?.city || event?.name || event?.location || 'Unknown location';
+  const parsedLocation = parseLocationField(event?.location);
+  return event?.circuit_name || event?.city || parsedLocation.city || event?.name || event?.location || 'Unknown location';
 }
 
 async function resolveWeatherLocation(event, fallbackTimeZone = 'UTC') {
