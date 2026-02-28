@@ -500,19 +500,6 @@ function AdminDashboard({ onBack }) {
   const [status, setStatus] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [customEvents, setCustomEvents] = useState([])
-  const [allEvents, setAllEvents] = useState([])
-  const [adminGuilds, setAdminGuilds] = useState([])
-  const [testNotificationForm, setTestNotificationForm] = useState({
-    channel_id: '',
-    race_id: '',
-    lead_minutes: 5
-  })
-  const [weatherDebugForm, setWeatherDebugForm] = useState({
-    city: '',
-    date: '',
-    channel_id: ''
-  })
-  const [weatherDebugResult, setWeatherDebugResult] = useState(null)
   const [form, setForm] = useState({
     name: '',
     location: '',
@@ -533,8 +520,6 @@ function AdminDashboard({ onBack }) {
   useEffect(() => {
     if (isAuthenticated) {
       fetchCustomEvents()
-      fetchAllEvents()
-      fetchAdminGuilds()
     }
   }, [isAuthenticated])
 
@@ -584,60 +569,6 @@ function AdminDashboard({ onBack }) {
       setCustomEvents(response.data)
     } catch (error) {
       setStatus('Nem sikerült betölteni a custom eventeket.')
-    }
-  }
-
-  const fetchAllEvents = async () => {
-    try {
-      const response = await axios.get('/api/admin/all-events')
-      setAllEvents(response.data)
-    } catch (error) {
-      console.error('Failed to fetch all events:', error)
-    }
-  }
-
-  const fetchAdminGuilds = async () => {
-    try {
-      const response = await axios.get('/api/admin/discord-guilds')
-      setAdminGuilds(response.data)
-    } catch (error) {
-      console.error('Failed to fetch admin guilds:', error)
-    }
-  }
-
-  const sendTestNotificationByType = async () => {
-    if (!testNotificationForm.channel_id || !testNotificationForm.race_id) {
-      setStatus('Adj meg egy channel ID-t és válassz egy eseményt!')
-      return
-    }
-    setIsLoading(true)
-    setStatus('')
-    try {
-      await axios.post('/api/admin/send-test-race-notification', testNotificationForm)
-      setStatus('Test notification elküldve!')
-    } catch (error) {
-      setStatus('Nem sikerült elküldeni a test notificationt: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const sendWeatherDebug = async () => {
-    if (!weatherDebugForm.city || !weatherDebugForm.date || !weatherDebugForm.channel_id) {
-      setStatus('Adj meg egy várost, dátumot és channel ID-t!')
-      return
-    }
-    setIsLoading(true)
-    setStatus('')
-    try {
-      const response = await axios.post('/api/admin/weather-debug', weatherDebugForm)
-      setWeatherDebugResult(response.data)
-      setStatus('Időjárás elküldve a Discord csatornára.')
-    } catch (error) {
-      setWeatherDebugResult(null)
-      setStatus('Nem sikerült elküldeni az időjárást: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -887,106 +818,6 @@ function AdminDashboard({ onBack }) {
               )}
             </div>
 
-            <div className="admin-card">
-              <div className="admin-card-header">
-                <h2>🧪 Discord Notification Teszt</h2>
-              </div>
-              <p className="muted">Teszteld a notifikációkat egy valódi eseménnyel egy Discord csatornára.</p>
-              <div className="form-row">
-                <label>Channel ID</label>
-                <input
-                  type="text"
-                  placeholder="pl. 1234567890123456789"
-                  value={testNotificationForm.channel_id}
-                  onChange={(e) => setTestNotificationForm({ ...testNotificationForm, channel_id: e.target.value })}
-                  disabled={isLoading}
-                />
-                <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                  A Discord csatorna ID-ja (jobb-klikk a csatornán → Copy ID)
-                </small>
-              </div>
-              <div className="form-row">
-                <label>Esemény</label>
-                <select
-                  value={testNotificationForm.race_id}
-                  onChange={(e) => setTestNotificationForm({ ...testNotificationForm, race_id: e.target.value })}
-                  disabled={isLoading}
-                >
-                  <option value="">Válassz egy eseményt</option>
-                  {allEvents.map((event) => (
-                    <option key={event.id} value={event.id}>
-                      {event.name} - {new Date(event.date).toLocaleDateString('hu-HU')} ({event.type})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-row">
-                <label>Értesítés időzítés (perc)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="1440"
-                  value={testNotificationForm.lead_minutes}
-                  onChange={(e) => setTestNotificationForm({ ...testNotificationForm, lead_minutes: Number(e.target.value) })}
-                  disabled={isLoading}
-                />
-                <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                  Például: <strong>5</strong> → értesítés 5 perccel az esemény előtt, <strong>0</strong> → értesítés az induláskor
-                </small>
-              </div>
-              <button className="primary-button" onClick={sendTestNotificationByType} disabled={isLoading}>
-                Test notification küldése
-              </button>
-              {status && <p className="status-text">{status}</p>}
-            </div>
-
-            <div className="admin-card">
-              <div className="admin-card-header">
-                <h2>🌦️ Meteoblue Időjárás Debug</h2>
-              </div>
-              <p className="muted">Lekérdezzük a megadott város időjárását a kiválasztott napra, és elküldjük a Discord csatornára.</p>
-              <div className="form-row">
-                <label>Város</label>
-                <input
-                  type="text"
-                  placeholder="pl. Budapest"
-                  value={weatherDebugForm.city}
-                  onChange={(e) => setWeatherDebugForm({ ...weatherDebugForm, city: e.target.value })}
-                  disabled={isLoading}
-                />
-              </div>
-              <div className="form-row">
-                <label>Dátum</label>
-                <input
-                  type="date"
-                  value={weatherDebugForm.date}
-                  onChange={(e) => setWeatherDebugForm({ ...weatherDebugForm, date: e.target.value })}
-                  disabled={isLoading}
-                />
-              </div>
-              <div className="form-row">
-                <label>Discord Channel ID</label>
-                <input
-                  type="text"
-                  placeholder="pl. 1234567890123456789"
-                  value={weatherDebugForm.channel_id}
-                  onChange={(e) => setWeatherDebugForm({ ...weatherDebugForm, channel_id: e.target.value })}
-                  disabled={isLoading}
-                />
-              </div>
-              <button className="primary-button" onClick={sendWeatherDebug} disabled={isLoading}>
-                Időjárás lekérés és küldés
-              </button>
-              {weatherDebugResult && (
-                <div className="weather-debug-result">
-                  <h4>Elküldött előrejelzés</h4>
-                  <p><strong>Helyszín:</strong> {weatherDebugResult.location?.name}{weatherDebugResult.location?.country ? `, ${weatherDebugResult.location.country}` : ''}</p>
-                  <p><strong>Dátum:</strong> {weatherDebugResult.date}</p>
-                  <p className="muted">A részletek a Discord üzenetben vannak.</p>
-                </div>
-              )}
-              {status && <p className="status-text">{status}</p>}
-            </div>
           </div>
         )}
       </div>
