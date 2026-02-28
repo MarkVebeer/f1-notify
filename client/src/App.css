@@ -458,6 +458,20 @@ body {
   background: rgba(0, 0, 0, 0.2);
 }
 
+.track-layout-card {
+  background: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+}
+
+.track-layout-image {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  display: block;
+}
+
 .race-item {
   background: var(--card-bg);
   border-radius: 8px;
@@ -602,6 +616,10 @@ body {
     padding: 0.75rem;
   }
 
+  .track-layout-image {
+    max-height: 260px;
+  }
+
   .race-content {
     gap: 1rem;
     padding: 1rem;
@@ -687,6 +705,15 @@ body {
   .weekend-events {
     gap: 0.75rem;
     padding: 1rem;
+  }
+
+  .track-layout-card {
+    padding: 1rem;
+    border-radius: 10px;
+  }
+
+  .track-layout-image {
+    max-height: 300px;
   }
 
   .race-item {

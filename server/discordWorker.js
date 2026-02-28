@@ -1,9 +1,157 @@
 require('dotenv').config();
+const axios = require('axios');
 const db = require('./db');
 const discordDb = require('./discordDb');
 const { sendChannelMessage } = require('./discordService');
 
 const WORKER_INTERVAL_MS = 60 * 1000;
+const TRACK_LAYOUT_JSON_URL = process.env.TRACK_LAYOUT_JSON_URL || 'https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/refs/heads/main/circuits.json';
+const TRACK_LAYOUT_SVG_FOLDER_URL = process.env.TRACK_LAYOUT_SVG_FOLDER_URL || process.env['TRACK:LAYOUT_SVG_FOLDER_URL'] || 'https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/refs/heads/main/circuits/white-outline';
+const TRACK_LAYOUT_CACHE_TTL_MS = 60 * 60 * 1000;
+
+const COUNTRY_ALIASES = {
+  usa: 'united-states-of-america',
+  'united-states': 'united-states-of-america',
+  'united-states-of-america': 'united-states-of-america',
+  us: 'united-states-of-america',
+  uk: 'united-kingdom',
+  'great-britain': 'united-kingdom',
+  britain: 'united-kingdom',
+  uae: 'united-arab-emirates'
+};
+
+let trackLayoutMapCache = null;
+let trackLayoutMapFetchedAt = 0;
+
+function normalizeCountryId(value) {
+  if (!value) return '';
+
+  const normalized = String(value)
+    .split(',')[0]
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return COUNTRY_ALIASES[normalized] || normalized;
+}
+
+function getLayoutOrder(layoutId) {
+  const match = String(layoutId || '').match(/(\d+)(?!.*\d)/);
+  return match ? Number.parseInt(match[1], 10) : Number.NEGATIVE_INFINITY;
+}
+
+function getLatestLayoutId(layouts) {
+  if (!Array.isArray(layouts) || layouts.length === 0) {
+    return null;
+  }
+
+  return layouts
+    .map((layout) => {
+      const layoutId = layout?.layoutId || '';
+      return {
+        layoutId,
+        order: getLayoutOrder(layoutId)
+      };
+    })
+    .filter((item) => item.layoutId)
+    .sort((a, b) => b.order - a.order)[0]?.layoutId || null;
+}
+
+function getCircuitMaxSeasonYear(layouts) {
+  if (!Array.isArray(layouts) || layouts.length === 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const years = layouts.flatMap((layout) => {
+    const seasons = layout?.seasons || '';
+    const matches = String(seasons).match(/\d{4}/g);
+    return matches ? matches.map((year) => Number.parseInt(year, 10)) : [];
+  });
+
+  return years.length > 0 ? Math.max(...years) : Number.NEGATIVE_INFINITY;
+}
+
+function buildCountryLayoutMap(circuits) {
+  const bestByCountry = {};
+
+  if (!Array.isArray(circuits)) {
+    return {};
+  }
+
+  for (const circuit of circuits) {
+    const countryId = normalizeCountryId(circuit?.countryId);
+    const latestLayoutId = getLatestLayoutId(circuit?.layouts);
+    if (!countryId || !latestLayoutId) {
+      continue;
+    }
+
+    const candidate = {
+      layoutId: latestLayoutId,
+      maxSeasonYear: getCircuitMaxSeasonYear(circuit?.layouts),
+      layoutOrder: getLayoutOrder(latestLayoutId)
+    };
+
+    const current = bestByCountry[countryId];
+    if (
+      !current ||
+      candidate.maxSeasonYear > current.maxSeasonYear ||
+      (candidate.maxSeasonYear === current.maxSeasonYear && candidate.layoutOrder > current.layoutOrder)
+    ) {
+      bestByCountry[countryId] = candidate;
+    }
+  }
+
+  const result = {};
+  for (const [countryId, value] of Object.entries(bestByCountry)) {
+    result[countryId] = value.layoutId;
+  }
+  return result;
+}
+
+async function getTrackLayoutMap() {
+  const now = Date.now();
+  if (trackLayoutMapCache && now - trackLayoutMapFetchedAt < TRACK_LAYOUT_CACHE_TTL_MS) {
+    return trackLayoutMapCache;
+  }
+
+  try {
+    const response = await axios.get(TRACK_LAYOUT_JSON_URL, { timeout: 10000 });
+    trackLayoutMapCache = buildCountryLayoutMap(response.data);
+    trackLayoutMapFetchedAt = now;
+    return trackLayoutMapCache;
+  } catch (error) {
+    console.error('Failed to fetch track layout map for Discord embeds:', error.message || error);
+    return trackLayoutMapCache || {};
+  }
+}
+
+async function resolveTrackLayoutUrl(race) {
+  const countryId = normalizeCountryId(race?.location);
+  if (!countryId) {
+    return null;
+  }
+
+  const map = await getTrackLayoutMap();
+  const layoutId = map[countryId];
+  if (!layoutId) {
+    return null;
+  }
+
+  const baseUrl = TRACK_LAYOUT_SVG_FOLDER_URL.replace(/\/+$/, '');
+  return `${baseUrl}/${layoutId}.svg`;
+}
+
+function toDiscordImageUrl(layoutSvgUrl) {
+  if (!layoutSvgUrl) {
+    return null;
+  }
+
+  const withoutProtocol = layoutSvgUrl.replace(/^https?:\/\//, '');
+  return `https://images.weserv.nl/?url=${encodeURIComponent(withoutProtocol)}&output=png&w=420&h=260&fit=inside`;
+}
 
 async function buildRaceEmbed(race, config, leadMinutes) {
   const start = new Date(race.date);
@@ -55,6 +203,8 @@ async function buildRaceEmbed(race, config, leadMinutes) {
     fields.push({ name: '🏎️ Pálya', value: race.circuit_name, inline: false });
   }
 
+  const trackLayoutUrl = await resolveTrackLayoutUrl(race);
+
   const embed = {
     title: `🏁 ${race.name}`,
     description: description,
@@ -63,7 +213,11 @@ async function buildRaceEmbed(race, config, leadMinutes) {
     footer: { text: 'F1 Calendar • Discord Notify' }
   };
 
-  if (circuitImage) {
+  const discordTrackLayoutImageUrl = toDiscordImageUrl(trackLayoutUrl);
+
+  if (discordTrackLayoutImageUrl) {
+    embed.thumbnail = { url: discordTrackLayoutImageUrl };
+  } else if (circuitImage) {
     embed.thumbnail = { url: circuitImage };
   }
 

@@ -16,6 +16,8 @@ const { searchLocation, fetchBasicDayForecast, pickDayForecast, buildMeteogramIm
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const TRACK_LAYOUT_JSON_URL = process.env.TRACK_LAYOUT_JSON_URL || 'https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/refs/heads/main/circuits.json';
+const TRACK_LAYOUT_SVG_FOLDER_URL = process.env.TRACK_LAYOUT_SVG_FOLDER_URL || process.env['TRACK:LAYOUT_SVG_FOLDER_URL'] || 'https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/refs/heads/main/circuits/white-outline';
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
@@ -120,6 +122,13 @@ function resolveUnit(units, ...keys) {
 }
 
 // API Routes
+app.get('/api/public-config', (req, res) => {
+  res.json({
+    trackLayoutJsonUrl: TRACK_LAYOUT_JSON_URL,
+    trackLayoutSvgFolderUrl: TRACK_LAYOUT_SVG_FOLDER_URL
+  });
+});
+
 app.get('/api/races', async (req, res) => {
   try {
     const events = await db.getAllEvents();
