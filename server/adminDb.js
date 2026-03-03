@@ -18,7 +18,7 @@ function initAdminDatabase() {
       if (err) return reject(err);
 
       try {
-        await ensureDefaultAdmin();
+        await syncAdminFromEnv();
         resolve();
       } catch (error) {
         reject(error);
@@ -27,27 +27,29 @@ function initAdminDatabase() {
   });
 }
 
-function ensureDefaultAdmin() {
+function syncAdminFromEnv() {
   return new Promise((resolve, reject) => {
-    adminDb.get('SELECT COUNT(*) as count FROM admin_users', async (err, row) => {
-      if (err) return reject(err);
+    const username = process.env.ADMIN_USERNAME || 'admin';
+    const password = process.env.ADMIN_PASSWORD || 'admin123';
 
-      if (row.count > 0) return resolve();
-
-      const username = process.env.ADMIN_USERNAME || 'admin';
-      const password = process.env.ADMIN_PASSWORD || 'admin123';
-      const password_hash = await bcrypt.hash(password, 10);
-
-      adminDb.run(
-        'INSERT INTO admin_users (username, password_hash) VALUES (?, ?)',
-        [username, password_hash],
-        (insertErr) => {
-          if (insertErr) return reject(insertErr);
-          console.warn('Default admin created. Set ADMIN_USERNAME and ADMIN_PASSWORD in env for production.');
-          resolve();
-        }
-      );
-    });
+    bcrypt.hash(password, 10)
+      .then((password_hash) => {
+        adminDb.run(
+          `
+            INSERT INTO admin_users (username, password_hash)
+            VALUES (?, ?)
+            ON CONFLICT(username)
+            DO UPDATE SET password_hash = excluded.password_hash
+          `,
+          [username, password_hash],
+          (upsertErr) => {
+            if (upsertErr) return reject(upsertErr);
+            console.log(`Admin user synced from env: ${username}`);
+            resolve();
+          }
+        );
+      })
+      .catch(reject);
   });
 }
 

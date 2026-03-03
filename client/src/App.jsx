@@ -857,6 +857,7 @@ function DiscordDashboard({ onBack }) {
     role_map: {}
   })
   const [weatherConfig, setWeatherConfig] = useState({
+    channel_id: '',
     enabled: false,
     race_day_lead_minutes: ''
   })
@@ -894,6 +895,12 @@ function DiscordDashboard({ onBack }) {
       fetchNotifications(selectedGuildId)
     }
   }, [selectedGuildId])
+
+  useEffect(() => {
+    if (config.channel_id && !weatherConfig.channel_id) {
+      setWeatherConfig(prev => ({ ...prev, channel_id: config.channel_id }))
+    }
+  }, [config.channel_id, weatherConfig.channel_id])
 
   const checkAuth = async () => {
     setIsAuthLoading(true)
@@ -987,11 +994,16 @@ function DiscordDashboard({ onBack }) {
       const response = await axios.get(`/api/discord/weather-config/${guildId}`)
       if (response.data) {
         setWeatherConfig({
+          channel_id: response.data.channel_id || config.channel_id || '',
           enabled: response.data.enabled ? true : false,
           race_day_lead_minutes: response.data.race_day_lead_minutes ?? ''
         })
       } else {
-        setWeatherConfig({ enabled: false, race_day_lead_minutes: '' })
+        setWeatherConfig({
+          channel_id: config.channel_id || '',
+          enabled: false,
+          race_day_lead_minutes: ''
+        })
       }
     } catch {
       setStatus('Nem sikerült betölteni az időjárás értesítéseket.')
@@ -1116,6 +1128,7 @@ function DiscordDashboard({ onBack }) {
     try {
       await axios.post('/api/discord/weather-config', {
         guild_id: selectedGuildId,
+        channel_id: weatherConfig.channel_id || config.channel_id,
         enabled: Boolean(weatherConfig.enabled),
         race_day_lead_minutes: weatherConfig.race_day_lead_minutes ? Number(weatherConfig.race_day_lead_minutes) : null
       })
@@ -1275,6 +1288,23 @@ function DiscordDashboard({ onBack }) {
               </div>
               <p className="muted">Az első verseny napjának éjféle után elküldi a teljes versenyhétvégére szóló 3 napos előrejelzést.</p>
               <form onSubmit={saveWeatherConfig}>
+                <div className="form-row">
+                  <label>Időjárás csatorna</label>
+                  <select
+                    value={weatherConfig.channel_id}
+                    onChange={(e) => setWeatherConfig({ ...weatherConfig, channel_id: e.target.value })}
+                    required
+                    disabled={isLoading}
+                  >
+                    <option value="">Válassz csatornát</option>
+                    {channels.map((c) => (
+                      <option key={c.id} value={c.id}>#{c.name}</option>
+                    ))}
+                  </select>
+                  <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
+                    Ez külön csatorna a verseny értesítések csatornájától.
+                  </small>
+                </div>
                 <div className="form-row">
                   <label>Aktív</label>
                   <label className="checkbox-label" style={{ marginTop: '0.35rem' }}>

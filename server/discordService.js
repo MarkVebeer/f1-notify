@@ -1,6 +1,8 @@
 const axios = require('axios');
 
 const DISCORD_API = 'https://discord.com/api/v10';
+const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://f1.markveber.hu';
+const PUBLIC_APP_BUTTON_LABEL = process.env.PUBLIC_APP_BUTTON_LABEL || 'F1 oldal megnyitása';
 
 // Retry logika Discord API rate limitek kezelésére
 async function retryRequest(requestFn, retries = 3, delay = 1000) {
@@ -110,12 +112,40 @@ async function fetchGuildRoles(guildId) {
   });
 }
 
-async function sendChannelMessage(channelId, embed, roleId = null) {
+function buildWebsiteButton(url, label) {
+  if (!url) {
+    return null;
+  }
+
+  return [
+    {
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 5,
+          label,
+          url
+        }
+      ]
+    }
+  ];
+}
+
+async function sendChannelMessage(channelId, embed, roleId = null, options = {}) {
   const { botToken } = getDiscordConfig();
   const payload = { embeds: [embed] };
+
+  const includeWebsiteButton = options.includeWebsiteButton !== false;
+  const websiteUrl = options.websiteUrl || PUBLIC_APP_URL;
+  const websiteButtonLabel = options.websiteButtonLabel || PUBLIC_APP_BUTTON_LABEL;
   
   if (roleId) {
     payload.content = `<@&${roleId}>`;
+  }
+
+  if (includeWebsiteButton && websiteUrl) {
+    payload.components = buildWebsiteButton(websiteUrl, websiteButtonLabel);
   }
   
   const response = await axios.post(

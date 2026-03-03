@@ -1,6 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const path = require('path');
+const fs = require('fs');
 const db = require('./db');
 const discordDb = require('./discordDb');
 const adminDb = require('./adminDb');
@@ -8,6 +13,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 const discord = require('./discordService');
+const { startDiscordPresence } = require('./discordPresence');
 const { startScheduler } = require('./scheduler');
 const { syncCalendar } = require('./icsParser');
 const { runDiscordNotifications } = require('./discordWorker');
@@ -16,19 +22,77 @@ const { searchLocation, fetchBasicDayForecast, pickDayForecast, buildMeteogramIm
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const COOKIE_SECURE = process.env.COOKIE_SECURE
+  ? process.env.COOKIE_SECURE === 'true'
+  : (IS_PRODUCTION && !FRONTEND_URL.includes('localhost') && !FRONTEND_URL.includes('127.0.0.1'));
 const TRACK_LAYOUT_JSON_URL = process.env.TRACK_LAYOUT_JSON_URL || 'https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/refs/heads/main/circuits.json';
 const TRACK_LAYOUT_SVG_FOLDER_URL = process.env.TRACK_LAYOUT_SVG_FOLDER_URL || process.env['TRACK:LAYOUT_SVG_FOLDER_URL'] || 'https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/refs/heads/main/circuits/white-outline';
+const CLIENT_DIST_PATH = path.join(__dirname, '..', 'client', 'dist');
 
 // Middleware
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+const allowedOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false
+}));
+app.use(compression());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (!IS_PRODUCTION) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('CORS policy blocked this origin'));
+  },
+  credentials: true
+}));
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: IS_PRODUCTION ? 30 : 200,
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 const adminSessions = new Map();
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 const discordSessions = new Map();
 const DISCORD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+
+  for (const [token, session] of adminSessions.entries()) {
+    if (now > session.expiresAt) {
+      adminSessions.delete(token);
+    }
+  }
+
+  for (const [token, session] of discordSessions.entries()) {
+    if (now > session.expiresAt) {
+      discordSessions.delete(token);
+    }
+  }
+}, 15 * 60 * 1000).unref();
 
 function createAdminSession(username) {
   const token = crypto.randomBytes(24).toString('hex');
@@ -161,6 +225,7 @@ app.delete('/api/races/:id', async (req, res) => {
 });
 
 // Admin auth
+app.use('/api/admin/login', authLimiter);
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -182,7 +247,7 @@ app.post('/api/admin/login', async (req, res) => {
     res.cookie('admin_session', token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: COOKIE_SECURE,
       maxAge: ADMIN_SESSION_TTL_MS
     });
     res.json({ success: true });
@@ -293,6 +358,9 @@ app.post('/api/admin/sync', requireAdmin, async (req, res) => {
 });
 
 // Discord OAuth
+app.use('/api/discord/login', authLimiter);
+app.use('/api/discord/callback', authLimiter);
+
 app.get('/api/discord/login', async (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   res.cookie('discord_oauth_state', state, { httpOnly: true, sameSite: 'lax' });
@@ -323,11 +391,11 @@ app.get('/api/discord/callback', async (req, res) => {
     res.cookie('discord_session', sessionToken, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: COOKIE_SECURE,
       maxAge: DISCORD_SESSION_TTL_MS
     });
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/#discord`);
+    res.redirect(`${FRONTEND_URL}/#discord`);
   } catch (error) {
     console.error('Discord OAuth callback error:', error.message || error);
     res.status(500).send('Discord authentication failed');
@@ -474,7 +542,7 @@ app.post('/api/discord/config', requireDiscordAuth, async (req, res) => {
 
 app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => {
   try {
-    const { guild_id, enabled, race_day_lead_minutes } = req.body;
+    const { guild_id, channel_id, enabled, race_day_lead_minutes } = req.body;
     if (!guild_id) {
       return res.status(400).json({ error: 'Missing guild_id' });
     }
@@ -492,6 +560,7 @@ app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => 
 
     await discordDb.upsertWeatherConfig({
       guild_id,
+      channel_id: channel_id || null,
       enabled: enabledValue,
       race_day_lead_minutes: raceDayLeadValue
     });
@@ -787,23 +856,82 @@ app.post('/api/admin/weather-debug', requireAdmin, async (req, res) => {
   }
 });
 
-// Initialize database and start scheduler
-Promise.all([db.initDatabase(), adminDb.initAdminDatabase(), discordDb.initDiscordDatabase()])
-  .then(() => {
-    console.log('Databases initialized');
-    // Initial sync
-    return syncCalendar();
-  })
-  .then(() => {
+if (IS_PRODUCTION && fs.existsSync(CLIENT_DIST_PATH)) {
+  app.use(express.static(CLIENT_DIST_PATH));
+  app.get(/^\/(?!api).*/, (req, res) => {
+    res.sendFile(path.join(CLIENT_DIST_PATH, 'index.html'));
+  });
+}
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (err && err.message && err.message.includes('CORS')) {
+    return res.status(403).json({ error: 'Forbidden origin' });
+  }
+
+  console.error('Unhandled server error:', err);
+  return res.status(500).json({ error: 'Internal server error' });
+});
+
+async function initializeServices() {
+  await Promise.all([db.initDatabase(), adminDb.initAdminDatabase(), discordDb.initDiscordDatabase()]);
+  console.log('Databases initialized');
+
+  try {
+    await syncCalendar();
     console.log('Initial calendar sync completed');
-    // Start cron job for hourly updates
-    startScheduler();
-    console.log('Scheduler started - will sync every hour');
-  })
-  .catch(error => {
-    console.error('Initialization error:', error);
+  } catch (error) {
+    console.error('Initial calendar sync failed, continuing startup:', error.message || error);
+  }
+
+  startScheduler();
+  console.log('Scheduler started - will sync every hour');
+
+  startDiscordPresence();
+  console.log('Discord presence started');
+}
+
+async function startServer() {
+  await initializeServices();
+
+  const server = app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
   });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  const shutdown = (signal) => {
+    console.log(`${signal} received, shutting down gracefully...`);
+    server.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      console.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000).unref();
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  return server;
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error('Fatal startup error:', error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  app,
+  startServer
+};

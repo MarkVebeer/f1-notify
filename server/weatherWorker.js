@@ -555,6 +555,11 @@ async function runWeatherNotifications() {
         continue;
       }
 
+      const weatherChannelId = weatherConfig.channel_id || config.channel_id;
+      if (!weatherChannelId) {
+        continue;
+      }
+
       const grouped = groupRacesByName(events.filter((event) => new Date(event.date) >= now));
       const nextWeekend = pickNextWeekend(grouped);
 
@@ -604,13 +609,13 @@ async function runWeatherNotifications() {
           config,
           eventTimeZone
         });
-        await sendChannelMessage(config.channel_id, embed);
+        await sendChannelMessage(weatherChannelId, embed);
         await discordDb.logWeatherNotification({
           guild_id: weatherConfig.guild_id,
           weekend_key: weekendKey,
           scheduled_for: now.toISOString()
         });
-        console.log(`🌦️ [Weekend] ${nextWeekend.name} • ${config.channel_id}`);
+        console.log(`🌦️ [Weekend] ${nextWeekend.name} • ${weatherChannelId}`);
       } catch (error) {
         console.error(`❌ Weather failed for ${nextWeekend.name}:`, error.message || error);
       }
@@ -624,6 +629,12 @@ async function sendWeatherNotificationNow(guildId) {
   const config = await discordDb.getDiscordConfigByGuild(guildId);
   if (!config) {
     throw new Error('Guild not configured');
+  }
+
+  const weatherConfig = await discordDb.getWeatherConfigByGuild(guildId);
+  const weatherChannelId = weatherConfig?.channel_id || config.channel_id;
+  if (!weatherChannelId) {
+    throw new Error('Weather channel not configured');
   }
 
   const events = await db.getAllEvents();
@@ -658,7 +669,7 @@ async function sendWeatherNotificationNow(guildId) {
     eventTimeZone
   });
 
-  await sendChannelMessage(config.channel_id, embed);
+  await sendChannelMessage(weatherChannelId, embed);
   return { weekendName: nextWeekend.name };
 }
 
@@ -687,6 +698,11 @@ async function runRaceDayWeatherNotifications() {
     for (const weatherConfig of enabledWithLeadTime) {
       const config = configMap.get(weatherConfig.guild_id);
       if (!config) {
+        continue;
+      }
+
+      const weatherChannelId = weatherConfig.channel_id || config.channel_id;
+      if (!weatherChannelId) {
         continue;
       }
 
@@ -744,7 +760,7 @@ async function runRaceDayWeatherNotifications() {
             eventTimeZone
           });
 
-          await sendChannelMessage(config.channel_id, embed);
+          await sendChannelMessage(weatherChannelId, embed);
           
           await discordDb.logRaceDayWeatherNotification({
             guild_id: weatherConfig.guild_id,
@@ -752,7 +768,7 @@ async function runRaceDayWeatherNotifications() {
             scheduled_for: scheduledTime.toISOString()
           });
 
-          console.log(`🌦️ [Race Day] ${raceName} • ${todayDateString} • ${config.channel_id}`);
+          console.log(`🌦️ [Race Day] ${raceName} • ${todayDateString} • ${weatherChannelId}`);
         } catch (error) {
           console.error(`❌ Race-day weather failed for ${raceName}:`, error.message || error);
         }

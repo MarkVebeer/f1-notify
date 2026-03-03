@@ -2,6 +2,7 @@ require('dotenv').config();
 const axios = require('axios');
 const db = require('./db');
 const discordDb = require('./discordDb');
+const { startDiscordPresence } = require('./discordPresence');
 const { sendChannelMessage } = require('./discordService');
 
 const WORKER_INTERVAL_MS = 60 * 1000;
@@ -341,6 +342,7 @@ async function runDiscordNotifications() {
 
 function startDiscordWorker() {
   console.log('Discord notification worker started');
+  startDiscordPresence();
   runDiscordNotifications();
   setInterval(runDiscordNotifications, WORKER_INTERVAL_MS);
 }
