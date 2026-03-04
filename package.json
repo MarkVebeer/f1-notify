@@ -7,13 +7,8 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "nodemon server/index.js",
     "client": "cd client && npm run dev",
-    "discord": "node server/discordWorker.js",
     "build": "cd client && npm run build",
-    "start": "node server/index.js",
-    "start:prod": "node start-production.js",
-    "build:prod": "cd client && npm run build",
-    "status:prod-port": "powershell -NoProfile -Command \"$conn = Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue; if ($conn) { $conn | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize | Out-String } else { 'No listener on 3001' }\"",
-    "stop:prod": "powershell -NoProfile -Command \"$conn = Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue; if (-not $conn) { Write-Output 'No listener on 3001'; exit 0 }; $procIds = $conn | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($procId in $procIds) { Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue; Write-Output ('Stopped PID ' + $procId) }\""
+    "start": "node startprod.js"
   },
   "keywords": [
     "f1",

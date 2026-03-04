@@ -13,7 +13,7 @@ npm install
 ### 2) Frontend build
 
 ```bash
-npm run build:prod
+npm run build
 ```
 
 ### 3) Környezeti változók
@@ -24,10 +24,10 @@ npm run build:prod
 ### 4) Indítás production módban
 
 ```bash
-npm run start:prod
+npm run start
 ```
 
-Ez a parancs a `start-production.js` fájlt futtatja, ami:
+Ez a parancs a `startprod.js` fájlt futtatja, ami:
 
 - `NODE_ENV=production` módban indít
 - ellenőrzi a kritikus env változókat
