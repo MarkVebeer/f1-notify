@@ -19,6 +19,7 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -108,14 +109,6 @@ body {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(225, 6, 0, 0.1);
-}
-
-/* Admin dashboard */
-.admin-app .header h1 {
-  background: linear-gradient(135deg, #ffffff 0%, #cfcfd6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .back-button {
@@ -454,6 +447,11 @@ body {
   justify-content: center;
   padding: 0.85rem;
   z-index: 1000;
+  animation: modal-overlay-fade-in 176ms ease-out;
+}
+
+.gp-modal-overlay.is-closing {
+  animation: modal-overlay-fade-out 176ms ease-in forwards;
 }
 
 .gp-modal {
@@ -465,6 +463,32 @@ body {
   background: var(--card-bg);
   padding: 1rem;
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  animation: modal-card-grow-in 256ms cubic-bezier(0.2, 0.85, 0.3, 1) both;
+  transform-origin: center center;
+}
+
+.gp-modal.is-closing {
+  animation: modal-card-shrink-out 208ms cubic-bezier(0.35, 0.05, 0.65, 0.3) forwards;
+}
+
+@keyframes modal-overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-card-grow-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--modal-origin-translate-x, 0), var(--modal-origin-translate-y, 0)) scale(0.28);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
 }
 
 .gp-modal-header {
@@ -486,7 +510,15 @@ body {
   color: var(--text);
   border-radius: 8px;
   width: 34px;
+  min-width: 34px;
+  max-width: 34px;
   height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
   font-size: 1.2rem;
   line-height: 1;
   cursor: pointer;
@@ -1348,5 +1380,25 @@ body {
   .checkbox-label {
     padding: 0.35rem 0.65rem;
     font-size: 0.8rem;
+  }
+}
+
+@keyframes modal-overlay-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-card-shrink-out {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--modal-origin-translate-x, 0), var(--modal-origin-translate-y, 0)) scale(0.28);
   }
 }

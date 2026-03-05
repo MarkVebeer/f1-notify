@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import './App.css'
 
@@ -132,6 +132,9 @@ function App() {
   const [races, setRaces] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedGrandPrixKey, setSelectedGrandPrixKey] = useState(null)
+  const [modalAnimationOrigin, setModalAnimationOrigin] = useState(null)
+  const [isClosingGrandPrixModal, setIsClosingGrandPrixModal] = useState(false)
+  const modalCloseTimerRef = useRef(null)
   const [trackLayoutsByCountry, setTrackLayoutsByCountry] = useState({})
   const [failedTrackLayouts, setFailedTrackLayouts] = useState({})
   const [trackLayoutSources, setTrackLayoutSources] = useState({
@@ -270,13 +273,53 @@ function App() {
     }
   }
 
-  const openGrandPrixModal = (gpKey) => {
+  const openGrandPrixModal = (gpKey, originRect) => {
+    if (modalCloseTimerRef.current) {
+      clearTimeout(modalCloseTimerRef.current)
+      modalCloseTimerRef.current = null
+    }
+
+    setIsClosingGrandPrixModal(false)
+
+    if (originRect) {
+      const viewportCenterX = window.innerWidth / 2
+      const viewportCenterY = window.innerHeight / 2
+      const originCenterX = originRect.left + originRect.width / 2
+      const originCenterY = originRect.top + originRect.height / 2
+
+      setModalAnimationOrigin({
+        translateX: originCenterX - viewportCenterX,
+        translateY: originCenterY - viewportCenterY
+      })
+    } else {
+      setModalAnimationOrigin(null)
+    }
+
     setSelectedGrandPrixKey(gpKey)
   }
 
   const closeGrandPrixModal = () => {
-    setSelectedGrandPrixKey(null)
+    if (!selectedGrandPrixKey || isClosingGrandPrixModal) {
+      return
+    }
+
+    setIsClosingGrandPrixModal(true)
+
+    modalCloseTimerRef.current = setTimeout(() => {
+      setSelectedGrandPrixKey(null)
+      setModalAnimationOrigin(null)
+      setIsClosingGrandPrixModal(false)
+      modalCloseTimerRef.current = null
+    }, 208)
   }
+
+  useEffect(() => {
+    return () => {
+      if (modalCloseTimerRef.current) {
+        clearTimeout(modalCloseTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!selectedGrandPrixKey) {
@@ -291,6 +334,26 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedGrandPrixKey])
+
+  useEffect(() => {
+    if (!selectedGrandPrixKey) {
+      return undefined
+    }
+
+    const originalOverflow = document.body.style.overflow
+    const originalPaddingRight = document.body.style.paddingRight
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+
+    document.body.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow
+      document.body.style.paddingRight = originalPaddingRight
+    }
   }, [selectedGrandPrixKey])
 
   const formatDate = (dateString) => {
@@ -350,6 +413,10 @@ function App() {
   const groupedRaces = groupRacesByGrandPrix()
   const grandPrixCount = Object.keys(groupedRaces).length
   const selectedGrandPrix = selectedGrandPrixKey ? groupedRaces[selectedGrandPrixKey] : null
+  const modalAnimationStyle = {
+    '--modal-origin-translate-x': `${modalAnimationOrigin?.translateX || 0}px`,
+    '--modal-origin-translate-y': `${modalAnimationOrigin?.translateY || 0}px`
+  }
 
   if (isAdminView) {
     return (
@@ -368,7 +435,7 @@ function App() {
       <div className="container">
         <header className="header">
           <div className="header-top">
-            <h1>🏎️ F1 Calendar 2026</h1>
+            <h1>F1 Calendar 2026</h1>
             <div className="header-actions">
               <button className="secondary-button" onClick={() => { window.location.hash = '#discord' }}>Discord dashboard</button>
             </div>
@@ -406,11 +473,11 @@ function App() {
                   className="race-card"
                   role="button"
                   tabIndex={0}
-                  onClick={() => openGrandPrixModal(gpKey)}
+                  onClick={(event) => openGrandPrixModal(gpKey, event.currentTarget.getBoundingClientRect())}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      openGrandPrixModal(gpKey)
+                      openGrandPrixModal(gpKey, event.currentTarget.getBoundingClientRect())
                     }
                   }}
                 >
@@ -443,9 +510,10 @@ function App() {
         </div>
 
         {selectedGrandPrix && (
-          <div className="gp-modal-overlay" onClick={closeGrandPrixModal}>
+          <div className={`gp-modal-overlay ${isClosingGrandPrixModal ? 'is-closing' : ''}`} onClick={closeGrandPrixModal}>
             <div
-              className="gp-modal"
+              className={`gp-modal ${isClosingGrandPrixModal ? 'is-closing' : ''}`}
+              style={modalAnimationStyle}
               role="dialog"
               aria-modal="true"
               aria-labelledby="gp-modal-title"
@@ -684,7 +752,7 @@ function AdminDashboard({ onBack }) {
       <div className="container">
         <header className="header">
           <div className="header-top">
-            <h1>🔒 Admin Dashboard</h1>
+            <h1>Admin Dashboard</h1>
             <button className="back-button" onClick={onBack}>Vissza a naptárhoz</button>
           </div>
         </header>
@@ -1249,7 +1317,7 @@ function DiscordDashboard({ onBack }) {
         <div className="container">
           <header className="header">
             <div className="header-top">
-              <h1>⚙️ {guild?.name} - Beállítás</h1>
+              <h1>{guild?.name} - Beállítás</h1>
               <button className="back-button" onClick={() => setSelectedGuildId(null)}>Vissza az admin szerverekhez</button>
             </div>
           </header>
@@ -1507,7 +1575,7 @@ function DiscordDashboard({ onBack }) {
         <div className="container">
           <header className="header">
             <div className="header-top">
-              <h1>💬 Discord Dashboard</h1>
+              <h1>Discord Dashboard</h1>
               <button className="back-button" onClick={onBack}>Vissza a naptárhoz</button>
             </div>
           </header>
@@ -1524,7 +1592,7 @@ function DiscordDashboard({ onBack }) {
       <div className="container">
         <header className="header">
           <div className="header-top">
-            <h1>💬 Discord Dashboard</h1>
+            <h1>Discord Dashboard</h1>
             <button className="back-button" onClick={onBack}>Vissza a naptárhoz</button>
           </div>
         </header>
