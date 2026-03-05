@@ -799,8 +799,17 @@ function App() {
               featuredWeekend.mode === 'current'
                 ? (isFeaturedWeekendEventRunning ? 'is-current-weekend' : '')
                 : 'is-next-weekend'
-            }`}
+            } ${gpSearchQuery.trim() ? 'is-hidden-on-mobile-when-searching' : ''}`}
             aria-live="polite"
+            role="button"
+            tabIndex={0}
+            onClick={(event) => openGrandPrixModal(featuredWeekend.key, event.currentTarget.getBoundingClientRect())}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                openGrandPrixModal(featuredWeekend.key, event.currentTarget.getBoundingClientRect())
+              }
+            }}
           >
             <div className="featured-weekend-main">
               <div className="featured-weekend-content">
@@ -860,6 +869,11 @@ function App() {
             </div>
           </section>
         )}
+
+        <div className="gp-list-divider" aria-hidden="true">
+          <span className="gp-list-divider-label">WEEKENDS</span>
+          <span className="gp-list-divider-line" />
+        </div>
 
         <div className="races-list">
           {grandPrixCount === 0 ? (

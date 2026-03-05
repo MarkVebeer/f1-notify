@@ -515,11 +515,23 @@ body {
   background: var(--card-bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   position: relative;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .featured-weekend-card.is-hidden-on-mobile-when-searching {
+    display: none;
+  }
 }
 
 .featured-weekend-card > * {
   position: relative;
   z-index: 1;
+}
+
+.featured-weekend-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .featured-weekend-card.is-next-weekend {
@@ -704,6 +716,27 @@ body {
   margin-bottom: 2rem;
   padding: 0 0.25rem;
   justify-content: center;
+}
+
+.gp-list-divider {
+  margin: 0 0.25rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.gp-list-divider-label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.gp-list-divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.06));
 }
 
 .race-card {
