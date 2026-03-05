@@ -282,6 +282,7 @@ function App() {
   const [isClosingSettingsModal, setIsClosingSettingsModal] = useState(false)
   const [settingsModalAnimationOrigin, setSettingsModalAnimationOrigin] = useState(null)
   const settingsModalCloseTimerRef = useRef(null)
+  const isClosingViaHistoryRef = useRef(false)
   const [trackLayoutsByCountry, setTrackLayoutsByCountry] = useState({})
   const [failedTrackLayouts, setFailedTrackLayouts] = useState({})
   const [trackLayoutSources, setTrackLayoutSources] = useState({
@@ -431,6 +432,11 @@ function App() {
   }
 
   const openGrandPrixModal = (gpKey, originRect) => {
+    const currentHistoryState = window.history.state || {}
+    if (!selectedGrandPrixKey && !isSettingsModalOpen && !currentHistoryState.__f1Modal) {
+      window.history.pushState({ ...currentHistoryState, __f1Modal: 'gp' }, '')
+    }
+
     if (modalCloseTimerRef.current) {
       clearTimeout(modalCloseTimerRef.current)
       modalCloseTimerRef.current = null
@@ -455,8 +461,15 @@ function App() {
     setSelectedGrandPrixKey(gpKey)
   }
 
-  const closeGrandPrixModal = () => {
+  const closeGrandPrixModal = (fromHistoryNavigation = false) => {
     if (!selectedGrandPrixKey || isClosingGrandPrixModal) {
+      return
+    }
+
+    const currentHistoryState = window.history.state || {}
+    if (!fromHistoryNavigation && currentHistoryState.__f1Modal) {
+      isClosingViaHistoryRef.current = true
+      window.history.back()
       return
     }
 
@@ -471,6 +484,11 @@ function App() {
   }
 
   const openSettingsModal = (originRect) => {
+    const currentHistoryState = window.history.state || {}
+    if (!selectedGrandPrixKey && !isSettingsModalOpen && !currentHistoryState.__f1Modal) {
+      window.history.pushState({ ...currentHistoryState, __f1Modal: 'settings' }, '')
+    }
+
     if (settingsModalCloseTimerRef.current) {
       clearTimeout(settingsModalCloseTimerRef.current)
       settingsModalCloseTimerRef.current = null
@@ -495,8 +513,15 @@ function App() {
     setIsSettingsModalOpen(true)
   }
 
-  const closeSettingsModal = () => {
+  const closeSettingsModal = (fromHistoryNavigation = false) => {
     if (!isSettingsModalOpen || isClosingSettingsModal) {
+      return
+    }
+
+    const currentHistoryState = window.history.state || {}
+    if (!fromHistoryNavigation && currentHistoryState.__f1Modal) {
+      isClosingViaHistoryRef.current = true
+      window.history.back()
       return
     }
 
@@ -521,6 +546,23 @@ function App() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isSettingsModalOpen) {
+        closeSettingsModal(true)
+      } else if (selectedGrandPrixKey) {
+        closeGrandPrixModal(true)
+      }
+
+      if (isClosingViaHistoryRef.current) {
+        isClosingViaHistoryRef.current = false
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [isSettingsModalOpen, selectedGrandPrixKey, isClosingSettingsModal, isClosingGrandPrixModal])
 
   useEffect(() => {
     if (!selectedGrandPrixKey && !isSettingsModalOpen) {
