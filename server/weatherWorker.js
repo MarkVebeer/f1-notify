@@ -412,20 +412,20 @@ async function buildWeekendWeatherEmbed({ weekendRaces, config, eventTimeZone = 
   if (resolvedEventTimeZone !== userTimeZone) {
     const tzDiff = getTimeZoneOffsetDifference(resolvedEventTimeZone, userTimeZone);
     if (tzDiff.diffMinutes > 0) {
-      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
+      tzNote = `\n📍 Event location timezone: ${resolvedEventTimeZone}\n⏱️ Difference from your timezone: ${tzDiff.str} hours`;
     } else if (tzDiff.diffMinutes < 0) {
-      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
+      tzNote = `\n📍 Event location timezone: ${resolvedEventTimeZone}\n⏱️ Difference from your timezone: ${tzDiff.str} hours`;
     }
   }
 
   const embed = {
-    title: `🌦️ ${firstEvent.name} • Hétvégi időjárás`,
+    title: `🌦️ ${firstEvent.name} • Weekend weather`,
     description: `${locationName}\n${dateRange}${tzNote}`,
     color: 0x4aa3ff,
     fields: [
-      { name: 'Hőmérséklet\n(min, max, avg)', value: temperatureText, inline: true },
-      { name: 'Csapadék', value: combinedPrecipitationText, inline: true },
-      { name: 'Szél\n(avg, max)', value: windText, inline: true }
+      { name: 'Temperature\n(min, max, avg)', value: temperatureText, inline: true },
+      { name: 'Precipitation', value: combinedPrecipitationText, inline: true },
+      { name: 'Wind\n(avg, max)', value: windText, inline: true }
     ],
     image: { url: meteogramUrl },
     footer: { text: `meteoblue • ${locationTimeZone}` }
@@ -506,20 +506,20 @@ async function buildRaceDayWeatherEmbed({ raceEvents, config, eventTimeZone = nu
   if (resolvedEventTimeZone !== userTimeZone) {
     const tzDiff = getTimeZoneOffsetDifference(resolvedEventTimeZone, userTimeZone);
     if (tzDiff.diffMinutes > 0) {
-      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
+      tzNote = `\n📍 Event location timezone: ${resolvedEventTimeZone}\n⏱️ Difference from your timezone: ${tzDiff.str} hours`;
     } else if (tzDiff.diffMinutes < 0) {
-      tzNote = `\n📍 Helyszín időzóna: ${resolvedEventTimeZone}\n🇭🇺 A te időzónádhoz képest: ${tzDiff.str} óra`;
+      tzNote = `\n📍 Event location timezone: ${resolvedEventTimeZone}\n⏱️ Difference from your timezone: ${tzDiff.str} hours`;
     }
   }
 
   const embed = {
-    title: `🌦️ ${firstEvent.name} • Mai időjárás`,
+    title: `🌦️ ${firstEvent.name} • Today's weather`,
     description: `${locationName}\n${raceDayDate}${tzNote}`,
     color: 0x4aa3ff,
     fields: [
-      { name: 'Hőmérséklet\n(min, max, avg)', value: temperatureText, inline: true },
-      { name: 'Csapadék', value: combinedPrecipitationText, inline: true },
-      { name: 'Szél\n(avg, max)', value: windText, inline: true }
+      { name: 'Temperature\n(min, max, avg)', value: temperatureText, inline: true },
+      { name: 'Precipitation', value: combinedPrecipitationText, inline: true },
+      { name: 'Wind\n(avg, max)', value: windText, inline: true }
     ],
     image: { url: meteogramUrl },
     footer: { text: `meteoblue • ${locationTimeZone}` }

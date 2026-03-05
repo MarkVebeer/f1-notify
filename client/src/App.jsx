@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import './App.css'
+import settingsIconPng from './img/setting.png'
 
 axios.defaults.withCredentials = true
 
@@ -119,6 +120,174 @@ function buildCountryLayoutMap(circuits) {
   return result
 }
 
+function normalizeSearchText(value) {
+  if (!value) {
+    return ''
+  }
+
+  return String(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getTimeZoneComparableMs(dateInput, timeZone) {
+  const date = new Date(dateInput)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(date)
+
+  const partMap = parts.reduce((result, part) => {
+    if (part.type !== 'literal') {
+      result[part.type] = part.value
+    }
+    return result
+  }, {})
+
+  return Date.UTC(
+    Number(partMap.year),
+    Number(partMap.month) - 1,
+    Number(partMap.day),
+    Number(partMap.hour),
+    Number(partMap.minute),
+    Number(partMap.second)
+  )
+}
+
+function getFeaturedWeekend(groupedRaces, timeZone, nowDate = new Date()) {
+  const threeHoursInMs = 3 * 60 * 60 * 1000
+  const nowComparableMs = getTimeZoneComparableMs(nowDate, timeZone)
+
+  const weekends = Object.entries(groupedRaces)
+    .map(([key, grandPrix]) => {
+      const sortedEvents = [...grandPrix.events].sort((a, b) => new Date(a.date) - new Date(b.date))
+      if (sortedEvents.length === 0) {
+        return null
+      }
+
+      const firstEvent = sortedEvents[0]
+      const lastEvent = sortedEvents[sortedEvents.length - 1]
+      const startMs = getTimeZoneComparableMs(firstEvent.date, timeZone)
+      const lastEventStartMs = getTimeZoneComparableMs(lastEvent.date, timeZone)
+
+      return {
+        key,
+        grandPrix,
+        firstEvent,
+        lastEvent,
+        startMs,
+        currentWindowEndMs: lastEventStartMs + threeHoursInMs
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.startMs - b.startMs)
+
+  const currentWeekend = weekends.find(weekend => nowComparableMs >= weekend.startMs && nowComparableMs < weekend.currentWindowEndMs)
+  if (currentWeekend) {
+    return {
+      mode: 'current',
+      ...currentWeekend
+    }
+  }
+
+  const nextWeekend = weekends.find(weekend => nowComparableMs < weekend.startMs)
+  if (nextWeekend) {
+    return {
+      mode: 'next',
+      ...nextWeekend
+    }
+  }
+
+  return null
+}
+
+function getNextWeekendEvent(featuredWeekend, timeZone, nowDate = new Date()) {
+  if (!featuredWeekend?.grandPrix?.events?.length) {
+    return null
+  }
+
+  const threeHoursInMs = 3 * 60 * 60 * 1000
+  const nowComparableMs = getTimeZoneComparableMs(nowDate, timeZone)
+  const sortedEvents = [...featuredWeekend.grandPrix.events].sort((a, b) => new Date(a.date) - new Date(b.date))
+
+  const runningEvent = sortedEvents.find(event => {
+    const eventStartComparableMs = getTimeZoneComparableMs(event.date, timeZone)
+    const eventEndComparableMs = event.end_date
+      ? getTimeZoneComparableMs(event.end_date, timeZone)
+      : eventStartComparableMs + threeHoursInMs
+
+    return nowComparableMs >= eventStartComparableMs && nowComparableMs < eventEndComparableMs
+  })
+
+  if (runningEvent) {
+    const runningEventEndComparableMs = runningEvent.end_date
+      ? getTimeZoneComparableMs(runningEvent.end_date, timeZone)
+      : getTimeZoneComparableMs(runningEvent.date, timeZone) + threeHoursInMs
+
+    return {
+      event: runningEvent,
+      isRunning: true,
+      countdownTargetComparableMs: runningEventEndComparableMs
+    }
+  }
+
+  const nextEvent = sortedEvents.find(event => getTimeZoneComparableMs(event.date, timeZone) > nowComparableMs)
+  if (nextEvent) {
+    return {
+      event: nextEvent,
+      isRunning: false,
+      countdownTargetComparableMs: getTimeZoneComparableMs(nextEvent.date, timeZone)
+    }
+  }
+
+  return null
+}
+
+function formatCountdown(durationMs) {
+  if (durationMs <= 0) {
+    return '00:00:00'
+  }
+
+  const totalSeconds = Math.floor(durationMs / 1000)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  const hh = String(hours).padStart(2, '0')
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+
+  if (days > 0) {
+    return `${days}d ${hh}:${mm}:${ss}`
+  }
+
+  return `${hh}:${mm}:${ss}`
+}
+
+function getScrollbarWidth() {
+  const measurementElement = document.createElement('div')
+  measurementElement.style.width = '100px'
+  measurementElement.style.height = '100px'
+  measurementElement.style.overflow = 'scroll'
+  measurementElement.style.position = 'absolute'
+  measurementElement.style.top = '-9999px'
+  document.body.appendChild(measurementElement)
+  const scrollbarWidth = measurementElement.offsetWidth - measurementElement.clientWidth
+  document.body.removeChild(measurementElement)
+  return scrollbarWidth
+}
+
 // All available timezones from the runtime
 const TIMEZONES = (() => {
   try {
@@ -135,6 +304,10 @@ function App() {
   const [modalAnimationOrigin, setModalAnimationOrigin] = useState(null)
   const [isClosingGrandPrixModal, setIsClosingGrandPrixModal] = useState(false)
   const modalCloseTimerRef = useRef(null)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isClosingSettingsModal, setIsClosingSettingsModal] = useState(false)
+  const [settingsModalAnimationOrigin, setSettingsModalAnimationOrigin] = useState(null)
+  const settingsModalCloseTimerRef = useRef(null)
   const [trackLayoutsByCountry, setTrackLayoutsByCountry] = useState({})
   const [failedTrackLayouts, setFailedTrackLayouts] = useState({})
   const [trackLayoutSources, setTrackLayoutSources] = useState({
@@ -144,6 +317,8 @@ function App() {
   const [isAdminView, setIsAdminView] = useState(() => window.location.hash === '#admin')
   const [isDiscordView, setIsDiscordView] = useState(() => window.location.hash === '#discord')
   const [toasts, setToasts] = useState([])
+  const [gpSearchQuery, setGpSearchQuery] = useState('')
+  const [nowTick, setNowTick] = useState(() => new Date())
   const [timezone, setTimezone] = useState(() => {
     // Load timezone from localStorage, default to local timezone
     const saved = localStorage.getItem('f1-timezone')
@@ -161,6 +336,14 @@ function App() {
     // Save timezone to localStorage when it changes
     localStorage.setItem('f1-timezone', timezone)
   }, [timezone])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(new Date())
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [])
 
   const showToast = (message, type = 'success') => {
     const id = Date.now()
@@ -313,52 +496,145 @@ function App() {
     }, 208)
   }
 
+  const openSettingsModal = (originRect) => {
+    if (settingsModalCloseTimerRef.current) {
+      clearTimeout(settingsModalCloseTimerRef.current)
+      settingsModalCloseTimerRef.current = null
+    }
+
+    setIsClosingSettingsModal(false)
+
+    if (originRect) {
+      const viewportCenterX = window.innerWidth / 2
+      const viewportCenterY = window.innerHeight / 2
+      const originCenterX = originRect.left + originRect.width / 2
+      const originCenterY = originRect.top + originRect.height / 2
+
+      setSettingsModalAnimationOrigin({
+        translateX: originCenterX - viewportCenterX,
+        translateY: originCenterY - viewportCenterY
+      })
+    } else {
+      setSettingsModalAnimationOrigin(null)
+    }
+
+    setIsSettingsModalOpen(true)
+  }
+
+  const closeSettingsModal = () => {
+    if (!isSettingsModalOpen || isClosingSettingsModal) {
+      return
+    }
+
+    setIsClosingSettingsModal(true)
+
+    settingsModalCloseTimerRef.current = setTimeout(() => {
+      setIsSettingsModalOpen(false)
+      setSettingsModalAnimationOrigin(null)
+      setIsClosingSettingsModal(false)
+      settingsModalCloseTimerRef.current = null
+    }, 208)
+  }
+
   useEffect(() => {
     return () => {
       if (modalCloseTimerRef.current) {
         clearTimeout(modalCloseTimerRef.current)
       }
+
+      if (settingsModalCloseTimerRef.current) {
+        clearTimeout(settingsModalCloseTimerRef.current)
+      }
     }
   }, [])
 
   useEffect(() => {
-    if (!selectedGrandPrixKey) {
+    if (!selectedGrandPrixKey && !isSettingsModalOpen) {
       return undefined
     }
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
+        if (isSettingsModalOpen) {
+          closeSettingsModal()
+          return
+        }
+
         closeGrandPrixModal()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedGrandPrixKey])
+  }, [selectedGrandPrixKey, isSettingsModalOpen, isClosingSettingsModal, isClosingGrandPrixModal])
 
   useEffect(() => {
-    if (!selectedGrandPrixKey) {
+    if (!selectedGrandPrixKey && !isSettingsModalOpen) {
       return undefined
     }
 
     const originalOverflow = document.body.style.overflow
     const originalPaddingRight = document.body.style.paddingRight
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+    const originalScrollbarCompensation = document.documentElement.style.getPropertyValue('--scrollbar-compensation')
+    const visualScrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+    const measuredScrollbarWidth = getScrollbarWidth()
+    const scrollbarWidth = visualScrollbarWidth > 0 ? visualScrollbarWidth : measuredScrollbarWidth
 
     document.body.style.overflow = 'hidden'
     if (scrollbarWidth > 0) {
       document.body.style.paddingRight = `${scrollbarWidth}px`
+      document.documentElement.style.setProperty('--scrollbar-compensation', `${scrollbarWidth}px`)
+    } else {
+      document.documentElement.style.setProperty('--scrollbar-compensation', '0px')
     }
 
     return () => {
       document.body.style.overflow = originalOverflow
       document.body.style.paddingRight = originalPaddingRight
+      if (originalScrollbarCompensation) {
+        document.documentElement.style.setProperty('--scrollbar-compensation', originalScrollbarCompensation)
+      } else {
+        document.documentElement.style.removeProperty('--scrollbar-compensation')
+      }
     }
-  }, [selectedGrandPrixKey])
+  }, [selectedGrandPrixKey, isSettingsModalOpen])
+
+  useEffect(() => {
+    if (selectedGrandPrixKey || isSettingsModalOpen || isAdminView || isDiscordView) {
+      return undefined
+    }
+
+    const applyPageScrollbarCompensation = () => {
+      const shouldCompensate = document.documentElement.scrollHeight <= window.innerHeight
+
+      if (!shouldCompensate) {
+        document.body.style.paddingRight = ''
+        document.documentElement.style.removeProperty('--scrollbar-compensation')
+        return
+      }
+
+      const scrollbarWidth = getScrollbarWidth()
+      if (scrollbarWidth > 0) {
+        const compensation = `${scrollbarWidth}px`
+        document.body.style.paddingRight = compensation
+        document.documentElement.style.setProperty('--scrollbar-compensation', compensation)
+      } else {
+        document.body.style.paddingRight = ''
+        document.documentElement.style.removeProperty('--scrollbar-compensation')
+      }
+    }
+
+    applyPageScrollbarCompensation()
+    window.addEventListener('resize', applyPageScrollbarCompensation)
+
+    return () => {
+      window.removeEventListener('resize', applyPageScrollbarCompensation)
+    }
+  }, [gpSearchQuery, races, selectedGrandPrixKey, isSettingsModalOpen, isAdminView, isDiscordView])
 
   const formatDate = (dateString) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('hu-HU', {
+    return date.toLocaleDateString('en-GB', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -366,6 +642,46 @@ function App() {
       minute: '2-digit',
       timeZone: timezone
     })
+  }
+
+  const formatEventDateRange = (event) => {
+    if (!event) {
+      return ''
+    }
+
+    if (event.end_date) {
+      return `${formatDate(event.date)} - ${formatDate(event.end_date)}`
+    }
+
+    return formatDate(event.date)
+  }
+
+  const getEventDateRangeParts = (event) => {
+    if (!event) {
+      return []
+    }
+
+    if (event.end_date) {
+      return [formatDate(event.date), formatDate(event.end_date)]
+    }
+
+    return [formatDate(event.date)]
+  }
+
+  const renderEventDateRange = (event) => {
+    const dateParts = getEventDateRangeParts(event)
+
+    if (dateParts.length <= 1) {
+      return <span className="race-date">{dateParts[0] || ''}</span>
+    }
+
+    return (
+      <span className="race-date is-range">
+        {dateParts.map((datePart, index) => (
+          <span key={`${datePart}-${index}`} className="race-date-part">{datePart}</span>
+        ))}
+      </span>
+    )
   }
 
   const getRaceTypeEmoji = (type) => {
@@ -407,15 +723,45 @@ function App() {
   }
 
   if (loading && !isAdminView && !isDiscordView) {
-    return <div className="loading">Betöltés...</div>
+    return <div className="loading">Loading...</div>
   }
 
   const groupedRaces = groupRacesByGrandPrix()
+  const groupedRaceEntries = Object.entries(groupedRaces)
+  const normalizedQueryTokens = normalizeSearchText(gpSearchQuery).split(' ').filter(Boolean)
+  const filteredGrandPrixEntries = normalizedQueryTokens.length === 0
+    ? groupedRaceEntries
+    : groupedRaceEntries.filter(([, grandPrix]) => {
+      const searchableText = normalizeSearchText([
+        grandPrix.name,
+        grandPrix.location,
+        grandPrix.city,
+        grandPrix.circuit_name
+      ].join(' '))
+
+      return normalizedQueryTokens.every(token => searchableText.includes(token))
+    })
+
   const grandPrixCount = Object.keys(groupedRaces).length
   const selectedGrandPrix = selectedGrandPrixKey ? groupedRaces[selectedGrandPrixKey] : null
+  const featuredWeekend = getFeaturedWeekend(groupedRaces, timezone, nowTick)
+  const featuredEventState = featuredWeekend ? getNextWeekendEvent(featuredWeekend, timezone, nowTick) : null
+  const featuredNextEvent = featuredEventState?.event || null
+  const isFeaturedWeekendEventRunning = Boolean(featuredEventState?.isRunning)
+  const featuredTrackLayoutUrl = featuredWeekend ? getTrackLayoutUrl(featuredWeekend.grandPrix.location) : null
+  const featuredShowTrackLayout = featuredTrackLayoutUrl && !failedTrackLayouts[featuredTrackLayoutUrl]
+  const nowComparableMs = getTimeZoneComparableMs(nowTick, timezone)
+  const featuredCountdownMs = featuredEventState
+    ? Math.max(0, featuredEventState.countdownTargetComparableMs - nowComparableMs)
+    : 0
+  const featuredCountdownText = featuredEventState ? formatCountdown(featuredCountdownMs) : 'Live'
   const modalAnimationStyle = {
     '--modal-origin-translate-x': `${modalAnimationOrigin?.translateX || 0}px`,
     '--modal-origin-translate-y': `${modalAnimationOrigin?.translateY || 0}px`
+  }
+  const settingsModalAnimationStyle = {
+    '--modal-origin-translate-x': `${settingsModalAnimationOrigin?.translateX || 0}px`,
+    '--modal-origin-translate-y': `${settingsModalAnimationOrigin?.translateY || 0}px`
   }
 
   if (isAdminView) {
@@ -431,39 +777,128 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app main-app">
       <div className="container">
+        <div className="desktop-top-actions">
+          <button
+            className="settings-trigger desktop-discord-trigger"
+            onClick={() => { window.location.hash = '#discord' }}
+            aria-label="Discord dashboard"
+          >
+            Discord dashboard
+          </button>
+          <button
+            className="settings-trigger desktop-settings-trigger"
+            onClick={(event) => openSettingsModal(event.currentTarget.getBoundingClientRect())}
+            aria-label="Settings"
+          >
+            Settings
+          </button>
+        </div>
+        <button
+          className="settings-trigger mobile-settings-trigger"
+          onClick={(event) => openSettingsModal(event.currentTarget.getBoundingClientRect())}
+          aria-label="Settings"
+        >
+          <img src={settingsIconPng} alt="" aria-hidden="true" className="mobile-settings-image" />
+        </button>
+
         <header className="header">
           <div className="header-top">
             <h1>F1 Calendar 2026</h1>
-            <div className="header-actions">
-              <button className="secondary-button" onClick={() => { window.location.hash = '#discord' }}>Discord dashboard</button>
-            </div>
-            <div className="timezone-selector">
-              <label htmlFor="timezone-select">Időzóna: </label>
-              <select
-                id="timezone-select"
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className="timezone-select"
-              >
-                {TIMEZONES.map(tz => (
-                  <option key={tz} value={tz}>
-                    {tz}
-                  </option>
-                ))}
-              </select>
+            <div className="gp-search">
+              <input
+                type="search"
+                value={gpSearchQuery}
+                onChange={(event) => setGpSearchQuery(event.target.value)}
+                className="gp-search-input"
+                placeholder="Search..."
+                aria-label="Search Grand Prix"
+                autoComplete="off"
+              />
             </div>
           </div>
         </header>
 
+        {featuredWeekend && (
+          <section
+            className={`featured-weekend-card ${
+              featuredWeekend.mode === 'current'
+                ? (isFeaturedWeekendEventRunning ? 'is-current-weekend' : '')
+                : 'is-next-weekend'
+            }`}
+            aria-live="polite"
+          >
+            <div className="featured-weekend-main">
+              <div className="featured-weekend-content">
+                <p className={`featured-weekend-badge ${featuredWeekend.mode === 'current' ? 'is-current' : 'is-next'}`}>
+                  {featuredWeekend.mode === 'current' ? 'Current weekend' : 'Next weekend'}
+                </p>
+                <h2 className="featured-weekend-title">{featuredWeekend.grandPrix.name}</h2>
+                <p className="featured-weekend-meta">
+                  {featuredWeekend.grandPrix.location || 'No location'}
+                  {featuredWeekend.grandPrix.city ? `, ${featuredWeekend.grandPrix.city}` : ''}
+                  {' • '}
+                  {featuredWeekend.grandPrix.circuit_name || 'No circuit name'}
+                </p>
+
+                <div className={`featured-next-event-card race-item ${featuredNextEvent ? getRaceTypeClass(featuredNextEvent.type) : ''}`}>
+                  <div className="race-content">
+                    <div className="race-emoji">{featuredNextEvent ? getRaceTypeEmoji(featuredNextEvent.type) : '⏳'}</div>
+                    <div className="race-info">
+                      <div className="race-header">
+                        <h4 className="race-name">{featuredNextEvent ? getEventTypeName(featuredNextEvent.type) : 'No more upcoming events this weekend'}</h4>
+                        <div className="race-header-badges">
+                          {featuredNextEvent && <span className="race-type">{featuredNextEvent.type}</span>}
+                          {isFeaturedWeekendEventRunning && <span className="race-type race-type-live">Now live</span>}
+                        </div>
+                      </div>
+                      <div className="race-details">
+                        {featuredNextEvent ? (
+                          <>
+                            <div className="race-date-countdown-row">
+                              {renderEventDateRange(featuredNextEvent)}
+                              <span className="featured-next-countdown-value">{featuredCountdownText}</span>
+                            </div>
+                            {featuredNextEvent.description && <span className="race-weather-description">{featuredNextEvent.description}</span>}
+                          </>
+                        ) : (
+                          <span className="race-date">The last event has already started.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="featured-weekend-side">
+                {featuredShowTrackLayout ? (
+                  <img
+                    src={featuredTrackLayoutUrl}
+                    alt={`${featuredWeekend.grandPrix.name} track layout`}
+                    className="featured-weekend-track-image"
+                    loading="lazy"
+                    onError={() => handleTrackLayoutImageError(featuredTrackLayoutUrl)}
+                  />
+                ) : (
+                  <div className="featured-weekend-track-placeholder">Track layout unavailable</div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         <div className="races-list">
           {grandPrixCount === 0 ? (
             <div className="no-races">
-              <p>Még nincsenek versenyek az adatbázisban.</p>
+              <p>No races in the database yet.</p>
+            </div>
+          ) : filteredGrandPrixEntries.length === 0 ? (
+            <div className="no-races">
+              <p>No results found.</p>
             </div>
           ) : (
-            Object.entries(groupedRaces).map(([gpKey, grandPrix]) => {
+            filteredGrandPrixEntries.map(([gpKey, grandPrix]) => {
               const trackLayoutUrl = getTrackLayoutUrl(grandPrix.location)
               const showTrackLayout = trackLayoutUrl && !failedTrackLayouts[trackLayoutUrl]
               
@@ -491,23 +926,67 @@ function App() {
                         onError={() => handleTrackLayoutImageError(trackLayoutUrl)}
                       />
                     ) : (
-                      <div className="race-card-layout-placeholder">Pályarajz nem elérhető</div>
+                      <div className="race-card-layout-placeholder">Track layout unavailable</div>
                     )}
                   </div>
                   <div className="race-card-body">
                     <h3 className="race-card-title">{grandPrix.name}</h3>
                     <p className="race-card-location">
-                      {grandPrix.location || 'Nincs helyszín'}
+                      {grandPrix.location || 'No location'}
                       {grandPrix.city ? `, ${grandPrix.city}` : ''}
                     </p>
-                    <p className="race-card-circuit">{grandPrix.circuit_name || 'Nincs pályanév'}</p>
-                    <span className="race-card-count">{grandPrix.events.length} esemény</span>
+                    <p className="race-card-circuit">{grandPrix.circuit_name || 'No circuit name'}</p>
+                    <span className="race-card-count">{grandPrix.events.length} events</span>
                   </div>
                 </article>
               )
             })
           )}
         </div>
+
+        {isSettingsModalOpen && (
+          <div className={`gp-modal-overlay ${isClosingSettingsModal ? 'is-closing' : ''}`} onClick={closeSettingsModal}>
+            <div
+              className={`gp-modal settings-modal ${isClosingSettingsModal ? 'is-closing' : ''}`}
+              style={settingsModalAnimationStyle}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="gp-modal-header">
+                <h2 id="settings-modal-title">Settings</h2>
+                <button className="gp-modal-close" onClick={closeSettingsModal} aria-label="Close">×</button>
+              </div>
+              <div className="settings-modal-content">
+                <div className="timezone-selector settings-timezone-selector">
+                  <label htmlFor="settings-timezone-select">Timezone:</label>
+                  <select
+                    id="settings-timezone-select"
+                    value={timezone}
+                    onChange={(event) => setTimezone(event.target.value)}
+                    className="timezone-select"
+                  >
+                    {TIMEZONES.map(tz => (
+                      <option key={tz} value={tz}>
+                        {tz}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  className="secondary-button settings-discord-button mobile-only"
+                  onClick={() => {
+                    closeSettingsModal()
+                    window.location.hash = '#discord'
+                  }}
+                >
+                  Discord dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {selectedGrandPrix && (
           <div className={`gp-modal-overlay ${isClosingGrandPrixModal ? 'is-closing' : ''}`} onClick={closeGrandPrixModal}>
@@ -521,7 +1000,7 @@ function App() {
             >
               <div className="gp-modal-header">
                 <h2 id="gp-modal-title">{selectedGrandPrix.name}</h2>
-                <button className="gp-modal-close" onClick={closeGrandPrixModal} aria-label="Bezárás">×</button>
+                <button className="gp-modal-close" onClick={closeGrandPrixModal} aria-label="Close">×</button>
               </div>
               <div className="gp-modal-events">
                 {selectedGrandPrix.events.map((race) => (
@@ -534,7 +1013,7 @@ function App() {
                           <span className="race-type">{race.type}</span>
                         </div>
                         <div className="race-details">
-                          <span className="race-date">{formatDate(race.date)}</span>
+                          {renderEventDateRange(race)}
                         </div>
                       </div>
                     </div>
@@ -546,7 +1025,7 @@ function App() {
         )}
 
         <footer className="footer">
-          <p>{grandPrixCount} Grand Prix • {races.length} esemény</p>
+          <p>{grandPrixCount} Grand Prix • {races.length} events</p>
         </footer>
       </div>
 
@@ -609,6 +1088,7 @@ function AdminDashboard({ onBack }) {
     name: '',
     location: '',
     date: '',
+    end_date: '',
     type: 'custom',
     description: ''
   })
@@ -645,9 +1125,9 @@ function AdminDashboard({ onBack }) {
       await axios.post('/api/admin/login', { username, password })
       setPassword('')
       setIsAuthenticated(true)
-      setStatus('Sikeres bejelentkezés.')
+      setStatus('Login successful.')
     } catch (error) {
-      setStatus('Sikertelen bejelentkezés.')
+      setStatus('Login failed.')
     } finally {
       setIsLoading(false)
     }
@@ -660,9 +1140,9 @@ function AdminDashboard({ onBack }) {
       await axios.post('/api/admin/logout')
       setIsAuthenticated(false)
       setCustomEvents([])
-      setStatus('Kiléptél.')
+      setStatus('Logged out.')
     } catch {
-      setStatus('Nem sikerült kijelentkezni.')
+      setStatus('Logout failed.')
     } finally {
       setIsLoading(false)
     }
@@ -673,7 +1153,7 @@ function AdminDashboard({ onBack }) {
       const response = await axios.get('/api/admin/custom-events')
       setCustomEvents(response.data)
     } catch (error) {
-      setStatus('Nem sikerült betölteni a custom eventeket.')
+      setStatus('Failed to load custom events.')
     }
   }
 
@@ -684,14 +1164,15 @@ function AdminDashboard({ onBack }) {
     try {
       const payload = {
         ...form,
-        date: form.date ? new Date(form.date).toISOString() : ''
+        date: form.date ? new Date(form.date).toISOString() : '',
+        end_date: form.end_date ? new Date(form.end_date).toISOString() : null
       }
       await axios.post('/api/admin/custom-events', payload)
-      setForm({ name: '', location: '', date: '', type: 'custom', description: '' })
-      setStatus('Custom event hozzáadva.')
+      setForm({ name: '', location: '', date: '', end_date: '', type: 'custom', description: '' })
+      setStatus('Custom event added.')
       await fetchCustomEvents()
     } catch (error) {
-      setStatus('Nem sikerült hozzáadni a custom eventet.')
+      setStatus('Failed to add custom event.')
     } finally {
       setIsLoading(false)
     }
@@ -702,10 +1183,10 @@ function AdminDashboard({ onBack }) {
     setStatus('')
     try {
       await axios.delete(`/api/admin/custom-events/${id}`)
-      setStatus('Custom event törölve.')
+      setStatus('Custom event deleted.')
       await fetchCustomEvents()
     } catch (error) {
-      setStatus('Nem sikerült törölni a custom eventet.')
+      setStatus('Failed to delete custom event.')
     } finally {
       setIsLoading(false)
     }
@@ -716,9 +1197,9 @@ function AdminDashboard({ onBack }) {
     setStatus('')
     try {
       await axios.post('/api/admin/sync')
-      setStatus('Naptár frissítve.')
+      setStatus('Calendar updated.')
     } catch (error) {
-      setStatus('Nem sikerült frissíteni a naptárat.')
+      setStatus('Failed to update calendar.')
     } finally {
       setIsLoading(false)
     }
@@ -727,7 +1208,7 @@ function AdminDashboard({ onBack }) {
   const changePassword = async (e) => {
     e.preventDefault()
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setStatus('Az új jelszavak nem egyeznek.')
+      setStatus('New passwords do not match.')
       return
     }
     setIsLoading(true)
@@ -739,9 +1220,9 @@ function AdminDashboard({ onBack }) {
         newPassword: passwordForm.newPassword
       })
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-      setStatus('Jelszó sikeresen megváltoztatva.')
+      setStatus('Password changed successfully.')
     } catch (error) {
-      setStatus('Nem sikerült megváltoztatni a jelszót.')
+      setStatus('Failed to change password.')
     } finally {
       setIsLoading(false)
     }
@@ -753,7 +1234,7 @@ function AdminDashboard({ onBack }) {
         <header className="header">
           <div className="header-top">
             <h1>Admin Dashboard</h1>
-            <button className="back-button" onClick={onBack}>Vissza a naptárhoz</button>
+            <button className="back-button" onClick={onBack}>Back to calendar</button>
           </div>
         </header>
 
@@ -762,12 +1243,12 @@ function AdminDashboard({ onBack }) {
             <div className="login-hero">
               <span className="login-icon">🔒</span>
               <div>
-                <h2>Bejelentkezés</h2>
-                <p className="muted login-subtitle">Admin hozzáférés az események kezeléséhez.</p>
+                <h2>Sign in</h2>
+                <p className="muted login-subtitle">Admin access for event management.</p>
               </div>
             </div>
             <div className="form-row">
-              <label>Felhasználónév</label>
+              <label>Username</label>
               <input
                 type="text"
                 value={username}
@@ -776,7 +1257,7 @@ function AdminDashboard({ onBack }) {
               />
             </div>
             <div className="form-row">
-              <label>Jelszó</label>
+              <label>Password</label>
               <input
                 type="password"
                 value={password}
@@ -784,18 +1265,18 @@ function AdminDashboard({ onBack }) {
                 placeholder="••••••••"
               />
             </div>
-            <button className="primary-button" type="submit" disabled={isLoading}>Bejelentkezés</button>
+            <button className="primary-button" type="submit" disabled={isLoading}>Sign in</button>
             {status && <p className="status-text">{status}</p>}
           </form>
         ) : (
           <div className="admin-grid">
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>Jelszó változtatás</h2>
+                <h2>Change password</h2>
               </div>
               <form onSubmit={changePassword}>
                 <div className="form-row">
-                  <label>Jelenlegi jelszó</label>
+                  <label>Current password</label>
                   <input
                     type="password"
                     value={passwordForm.currentPassword}
@@ -804,7 +1285,7 @@ function AdminDashboard({ onBack }) {
                   />
                 </div>
                 <div className="form-row">
-                  <label>Új jelszó (min 10 karakter)</label>
+                  <label>New password (min 10 characters)</label>
                   <input
                     type="password"
                     value={passwordForm.newPassword}
@@ -813,7 +1294,7 @@ function AdminDashboard({ onBack }) {
                   />
                 </div>
                 <div className="form-row">
-                  <label>Új jelszó megerősítése</label>
+                  <label>Confirm new password</label>
                   <input
                     type="password"
                     value={passwordForm.confirmPassword}
@@ -821,36 +1302,36 @@ function AdminDashboard({ onBack }) {
                     required
                   />
                 </div>
-                <button className="secondary-button" type="submit" disabled={isLoading}>Jelszó mentése</button>
+                <button className="secondary-button" type="submit" disabled={isLoading}>Save password</button>
               </form>
             </div>
 
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>Admin műveletek</h2>
+                <h2>Admin actions</h2>
               </div>
-              <button className="primary-button" onClick={triggerSync} disabled={isLoading}>Naptár frissítése</button>
-              <button className="secondary-button" onClick={logout} disabled={isLoading}>Kijelentkezés</button>
+              <button className="primary-button" onClick={triggerSync} disabled={isLoading}>Refresh calendar</button>
+              <button className="secondary-button" onClick={logout} disabled={isLoading}>Sign out</button>
               {status && <p className="status-text">{status}</p>}
             </div>
 
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>Custom Event létrehozása</h2>
+                <h2>Create custom event</h2>
               </div>
               <form onSubmit={createCustomEvent}>
                 <div className="form-row">
-                  <label>Név</label>
+                  <label>Name</label>
                   <input
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Saját event neve"
+                    placeholder="Custom event name"
                     required
                   />
                 </div>
                 <div className="form-row">
-                  <label>Helyszín</label>
+                  <label>Location</label>
                   <input
                     type="text"
                     value={form.location}
@@ -859,7 +1340,7 @@ function AdminDashboard({ onBack }) {
                   />
                 </div>
                 <div className="form-row">
-                  <label>Dátum és idő</label>
+                  <label>Date and time</label>
                   <input
                     type="datetime-local"
                     value={form.date}
@@ -868,7 +1349,15 @@ function AdminDashboard({ onBack }) {
                   />
                 </div>
                 <div className="form-row">
-                  <label>Típus</label>
+                  <label>End date and time (optional)</label>
+                  <input
+                    type="datetime-local"
+                    value={form.end_date}
+                    onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Type</label>
                   <select
                     value="custom"
                     disabled
@@ -881,32 +1370,33 @@ function AdminDashboard({ onBack }) {
                   />
                 </div>
                 <div className="form-row">
-                  <label>Leírás</label>
+                  <label>Description</label>
                   <textarea
                     rows="3"
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    placeholder="Opcionális megjegyzés"
+                    placeholder="Optional note"
                   />
                 </div>
-                <button className="primary-button" type="submit" disabled={isLoading}>Mentés</button>
+                <button className="primary-button" type="submit" disabled={isLoading}>Save</button>
               </form>
             </div>
 
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>Custom Eventek</h2>
-                <button className="ghost-button" onClick={fetchCustomEvents} disabled={isLoading}>Frissítés</button>
+                <h2>Custom events</h2>
+                <button className="ghost-button" onClick={fetchCustomEvents} disabled={isLoading}>Refresh</button>
               </div>
               {customEvents.length === 0 ? (
-                <p className="muted">Nincs custom event.</p>
+                <p className="muted">No custom events.</p>
               ) : (
                 <div className="custom-events-list">
                   {customEvents.map(event => (
                     <div key={event.id} className="custom-event-item">
                       <div className="custom-event-info">
                         <strong>{event.name}</strong>
-                        <span>{new Date(event.date).toLocaleString('hu-HU')}</span>
+                        <span>{new Date(event.date).toLocaleString('en-GB')}</span>
+                        {event.end_date && <span>Ends: {new Date(event.end_date).toLocaleString('en-GB')}</span>}
                         {event.location && <span>📍 {event.location}</span>}
                         {event.description && <span>{event.description}</span>}
                       </div>
@@ -915,7 +1405,7 @@ function AdminDashboard({ onBack }) {
                         onClick={() => deleteCustomEvent(event.id)}
                         disabled={isLoading}
                       >
-                        Törlés
+                        Delete
                       </button>
                     </div>
                   ))}
@@ -1026,7 +1516,7 @@ function DiscordDashboard({ onBack }) {
       const response = await axios.get('/api/discord/admin-guilds')
       setAdminGuilds(response.data)
     } catch {
-      setStatus('Nem sikerült betölteni az admin szervereket.')
+      setStatus('Failed to load admin servers.')
     } finally {
       setIsGuildsLoading(false)
     }
@@ -1042,7 +1532,7 @@ function DiscordDashboard({ onBack }) {
       const response = await axios.get(`/api/discord/guilds/${guildId}/channels`)
       setChannels(response.data)
     } catch {
-      setStatus('Nem sikerült betölteni a csatornákat.')
+      setStatus('Failed to load channels.')
     }
   }
 
@@ -1051,7 +1541,7 @@ function DiscordDashboard({ onBack }) {
       const response = await axios.get(`/api/discord/guilds/${guildId}/roles`)
       setRoles(response.data)
     } catch {
-      setStatus('Nem sikerült betölteni a szerepköröket.')
+      setStatus('Failed to load roles.')
     }
   }
 
@@ -1090,7 +1580,7 @@ function DiscordDashboard({ onBack }) {
         }))
       }
     } catch {
-      setStatus('Nem sikerült betölteni a beállítást.')
+      setStatus('Failed to load settings.')
     }
   }
 
@@ -1111,7 +1601,7 @@ function DiscordDashboard({ onBack }) {
         })
       }
     } catch {
-      setStatus('Nem sikerült betölteni az időjárás értesítéseket.')
+      setStatus('Failed to load weather notifications.')
     }
   }
 
@@ -1122,7 +1612,7 @@ function DiscordDashboard({ onBack }) {
       setNotificationEdits({}) // Clear edits when fetching
       setHasUnsavedChanges(false)
     } catch {
-      setStatus('Nem sikerült betölteni az értesítéseket.')
+      setStatus('Failed to load notifications.')
     }
   }
 
@@ -1136,9 +1626,9 @@ function DiscordDashboard({ onBack }) {
       })
       setNewLeadMinutes(60)
       await fetchNotifications(selectedGuildId)
-      showToast('Értesítés sikeresen hozzáadva!', 'success')
+      showToast('Notification added successfully!', 'success')
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült hozzáadni az értesítést.'
+      const errorMsg = error.response?.data?.error || 'Failed to add notification.'
       showToast(errorMsg, 'error')
     } finally {
       setIsLoading(false)
@@ -1150,9 +1640,9 @@ function DiscordDashboard({ onBack }) {
     try {
       await axios.delete(`/api/discord/notifications/${id}`)
       await fetchNotifications(selectedGuildId)
-      showToast('Értesítés sikeresen törölve!', 'success')
+      showToast('Notification deleted successfully!', 'success')
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült törölni az értesítést.'
+      const errorMsg = error.response?.data?.error || 'Failed to delete notification.'
       showToast(errorMsg, 'error')
     } finally {
       setIsLoading(false)
@@ -1196,9 +1686,9 @@ function DiscordDashboard({ onBack }) {
         }
       }
       await fetchNotifications(selectedGuildId)
-      showToast('Értesítések sikeresen elmentve!', 'success')
+      showToast('Notifications saved successfully!', 'success')
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült elmenteni az értesítéseket.'
+      const errorMsg = error.response?.data?.error || 'Failed to save notifications.'
       showToast(errorMsg, 'error')
     } finally {
       setIsLoading(false)
@@ -1212,15 +1702,15 @@ function DiscordDashboard({ onBack }) {
       await axios.post('/api/discord/config', {
         guild_id: selectedGuildId,
         channel_id: config.channel_id,
-        lead_minutes: 60, // Default, már nem használt
+        lead_minutes: 60,
         timezone: config.timezone,
         role_id: config.role_id || null,
         role_map: config.role_map || {}
       })
-      showToast('Beállítások sikeresen elmentve!', 'success')
+      showToast('Settings saved successfully!', 'success')
       await fetchAdminGuilds()
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült elmenteni a beállítást.'
+      const errorMsg = error.response?.data?.error || 'Failed to save settings.'
       showToast(errorMsg, 'error')
     } finally {
       setIsLoading(false)
@@ -1237,10 +1727,10 @@ function DiscordDashboard({ onBack }) {
         enabled: Boolean(weatherConfig.enabled),
         race_day_lead_minutes: weatherConfig.race_day_lead_minutes ? Number(weatherConfig.race_day_lead_minutes) : null
       })
-      showToast('Időjárás értesítés beállítva!', 'success')
+      showToast('Weather notification configured!', 'success')
       await fetchWeatherConfig(selectedGuildId)
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült menteni az időjárás értesítést.'
+      const errorMsg = error.response?.data?.error || 'Failed to save weather notification.'
       showToast(errorMsg, 'error')
     } finally {
       setIsLoading(false)
@@ -1253,9 +1743,9 @@ function DiscordDashboard({ onBack }) {
       await axios.post('/api/discord/weather-test', {
         guild_id: selectedGuildId
       })
-      showToast('Időjárás teszt elküldve!', 'success')
+      showToast('Weather test sent!', 'success')
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült elküldeni az időjárás tesztet.'
+      const errorMsg = error.response?.data?.error || 'Failed to send weather test.'
       showToast(errorMsg, 'error')
     } finally {
       setIsLoading(false)
@@ -1272,10 +1762,10 @@ function DiscordDashboard({ onBack }) {
       setAdminGuilds([])
       setGuildConfigs({})
       setSelectedGuildId(null)
-      setStatus('Kiléptél.')
-      showToast('Sikeresen kijelentkeztél!', 'success')
+      setStatus('Logged out.')
+      showToast('Signed out successfully!', 'success')
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült kijelentkezni.'
+      const errorMsg = error.response?.data?.error || 'Failed to sign out.'
       setStatus(errorMsg)
       showToast(errorMsg, 'error')
     } finally {
@@ -1288,7 +1778,7 @@ function DiscordDashboard({ onBack }) {
       const response = await axios.get('/api/discord/invite-url')
       window.open(response.data.url, '_blank')
     } catch {
-      setStatus('Nem sikerült meghívni a botot.')
+      setStatus('Failed to invite the bot.')
     }
   }
 
@@ -1299,10 +1789,10 @@ function DiscordDashboard({ onBack }) {
       await axios.post('/api/discord/test-notification', {
         guild_id: selectedGuildId
       })
-      setStatus('Test értesítés elküldve!')
-      showToast('Test értesítés sikeresen elküldve!', 'success')
+      setStatus('Test notification sent!')
+      showToast('Test notification sent successfully!', 'success')
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Nem sikerült elküldeni a test értesítést.'
+      const errorMsg = error.response?.data?.error || 'Failed to send test notification.'
       setStatus(errorMsg)
       showToast(errorMsg, 'error')
     } finally {
@@ -1317,32 +1807,32 @@ function DiscordDashboard({ onBack }) {
         <div className="container">
           <header className="header">
             <div className="header-top">
-              <h1>{guild?.name} - Beállítás</h1>
-              <button className="back-button" onClick={() => setSelectedGuildId(null)}>Vissza az admin szerverekhez</button>
+                <h1>{guild?.name} - Settings</h1>
+                <button className="back-button" onClick={() => setSelectedGuildId(null)}>Back to admin servers</button>
             </div>
           </header>
 
           <div className="admin-grid">
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>Értesítés beállítás</h2>
+                <h2>Notification settings</h2>
               </div>
               <form onSubmit={saveConfig}>
                 <div className="form-row">
-                  <label>Csatorna</label>
+                  <label>Channel</label>
                   <select
                     value={config.channel_id}
                     onChange={(e) => setConfig({ ...config, channel_id: e.target.value })}
                     required
                   >
-                    <option value="">Válassz csatornát</option>
+                    <option value="">Select a channel</option>
                     {channels.map((c) => (
                       <option key={c.id} value={c.id}>#{c.name}</option>
                     ))}
                   </select>
                 </div>
                 <div className="form-row">
-                  <label>Időzóna</label>
+                  <label>Timezone</label>
                   <select
                     value={config.timezone}
                     onChange={(e) => setConfig({ ...config, timezone: e.target.value })}
@@ -1354,7 +1844,7 @@ function DiscordDashboard({ onBack }) {
                   </select>
                 </div>
                 <div className="form-row">
-                  <label>Szerepkörök típusonként (opcionális)</label>
+                  <label>Roles by event type (optional)</label>
                   <div className="role-mapping-grid">
                     {['race', 'qualifying', 'practice', 'sprint', 'custom'].map((type) => (
                       <div key={type} className="role-mapping-item">
@@ -1371,7 +1861,7 @@ function DiscordDashboard({ onBack }) {
                             }
                           })}
                         >
-                          <option value="">Nincs szerepkör</option>
+                          <option value="">No role</option>
                           {roles
                             .filter(r => r.name !== '@everyone')
                             .sort((a, b) => b.position - a.position)
@@ -1383,35 +1873,35 @@ function DiscordDashboard({ onBack }) {
                     ))}
                   </div>
                 </div>
-                <button className="primary-button" type="submit" disabled={isLoading}>Alapbeállítások mentése</button>
+                <button className="primary-button" type="submit" disabled={isLoading}>Save base settings</button>
               </form>
             </div>
 
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>🌦️ Időjárás értesítés</h2>
+                <h2>🌦️ Weather notifications</h2>
               </div>
-              <p className="muted">Az első verseny napjának éjféle után elküldi a teljes versenyhétvégére szóló 3 napos előrejelzést.</p>
+              <p className="muted">Sends a 3-day forecast for the full race weekend after midnight on the first race day.</p>
               <form onSubmit={saveWeatherConfig}>
                 <div className="form-row">
-                  <label>Időjárás csatorna</label>
+                  <label>Weather channel</label>
                   <select
                     value={weatherConfig.channel_id}
                     onChange={(e) => setWeatherConfig({ ...weatherConfig, channel_id: e.target.value })}
                     required
                     disabled={isLoading}
                   >
-                    <option value="">Válassz csatornát</option>
+                    <option value="">Select a channel</option>
                     {channels.map((c) => (
                       <option key={c.id} value={c.id}>#{c.name}</option>
                     ))}
                   </select>
                   <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                    Ez külön csatorna a verseny értesítések csatornájától.
+                    This should be a separate channel from race notifications.
                   </small>
                 </div>
                 <div className="form-row">
-                  <label>Aktív</label>
+                  <label>Enabled</label>
                   <label className="checkbox-label" style={{ marginTop: '0.35rem' }}>
                     <input
                       type="checkbox"
@@ -1419,26 +1909,26 @@ function DiscordDashboard({ onBack }) {
                       onChange={(e) => setWeatherConfig({ ...weatherConfig, enabled: e.target.checked })}
                       disabled={isLoading}
                     />
-                    <span className="checkbox-text">Hétvégés időjárás értesítés bekapcsolása</span>
+                    <span className="checkbox-text">Enable weekend weather notifications</span>
                   </label>
                 </div>
                 <div className="form-row">
-                  <label>Verseny napi értesítés (perc)</label>
+                  <label>Race-day notification (minutes)</label>
                   <input
                     type="number"
                     min="5"
                     max="1440"
-                    placeholder="Opcionális"
+                    placeholder="Optional"
                     value={weatherConfig.race_day_lead_minutes}
                     onChange={(e) => setWeatherConfig({ ...weatherConfig, race_day_lead_minutes: e.target.value })}
                     disabled={isLoading}
                   />
                   <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                    Az esemény napján az első verseny előtt hány perccel küldjön időjárás értesítést (5-1440 perc). Hagyd üresen a kikapcsoláshoz.
+                    Minutes before the first race on event day to send a weather alert (5-1440). Leave empty to disable.
                   </small>
                 </div>
                 <button className="primary-button" type="submit" disabled={isLoading}>
-                  Időjárás értesítés mentése
+                  Save weather notification
                 </button>
                 <button
                   className="secondary-button"
@@ -1446,29 +1936,29 @@ function DiscordDashboard({ onBack }) {
                   onClick={sendWeatherTest}
                   disabled={isLoading}
                 >
-                  Időjárás teszt küldése most
+                  Send weather test now
                 </button>
               </form>
             </div>
 
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>⏰ Értesítések időzítése</h2>
+                <h2>⏰ Notification timing</h2>
               </div>
               {notifications.length === 0 && (
-                <p className="muted">Adj hozzá több értesítést különböző időpontokra (pl. esemény előtt 5, 10, 30 perc).</p>
+                <p className="muted">Add multiple notifications for different times (for example 5, 10, 30 minutes before an event).</p>
               )}
               
               <div className="notifications-list">
                 {notifications.length === 0 ? (
-                  <p className="muted">Még nincs értesítés beállítva.</p>
+                  <p className="muted">No notifications configured yet.</p>
                 ) : (
                   notifications.map((notif) => (
                     <div key={notif.id} className="notification-item-expanded">
                       <div className="notification-header">
                         <div className="notification-info">
                           <span className="notification-time">
-                            {notif.lead_minutes === 0 ? 'Esemény kezdetekor' : `${notif.lead_minutes} perccel előtte`}
+                            {notif.lead_minutes === 0 ? 'At event start' : `${notif.lead_minutes} minutes before`}
                           </span>
                         </div>
                         <button
@@ -1476,11 +1966,11 @@ function DiscordDashboard({ onBack }) {
                           onClick={() => deleteNotification(notif.id)}
                           disabled={isLoading}
                         >
-                          Törlés
+                          Delete
                         </button>
                       </div>
                       <div className="notification-types">
-                        <span className="notification-types-label">Típusok:</span>
+                        <span className="notification-types-label">Types:</span>
                         <div className="event-type-checkboxes">
                           {['race', 'practice', 'qualifying', 'sprint', 'custom'].map(type => {
                             const eventTypes = notificationEdits[notif.id] || notif.event_types || []
@@ -1506,31 +1996,31 @@ function DiscordDashboard({ onBack }) {
                 <div className="unsaved-changes-section">
                   <div className="unsaved-changes-message">
                     <span className="unsaved-changes-icon">⚠️</span>
-                    <span className="unsaved-changes-text">Változások nincsenek elmentve</span>
+                    <span className="unsaved-changes-text">Changes are not saved</span>
                   </div>
                   <button
                     className="unsaved-changes-button"
                     onClick={saveNotifications}
                     disabled={isLoading}
                   >
-                    {isLoading ? 'Folyamatban...' : 'Változások mentése'}
+                    {isLoading ? 'Saving...' : 'Save changes'}
                   </button>
                 </div>
               )}
 
               <div className="add-notification">
                 <div className="form-row">
-                  <label>Értesítés időzítése (perc)</label>
+                  <label>Notification timing (minutes)</label>
                   <input
                     type="number"
                     min="0"
                     max="1440"
                     value={newLeadMinutes}
                     onChange={(e) => setNewLeadMinutes(e.target.value)}
-                    placeholder="pl. 5"
+                    placeholder="e.g. 5"
                   />
                   <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
-                    Például: <strong>5 perc</strong> → értesítés 5 perccel az esemény előtt, <strong>0 perc</strong> → értesítés az induláskor
+                    Example: <strong>5 minutes</strong> → alert 5 minutes before the event, <strong>0 minutes</strong> → alert at start time
                   </small>
                 </div>
                 <button 
@@ -1538,7 +2028,7 @@ function DiscordDashboard({ onBack }) {
                   onClick={addNotification}
                   disabled={isLoading}
                 >
-                  Értesítés hozzáadása
+                  Add notification
                 </button>
               </div>
               
@@ -1548,7 +2038,7 @@ function DiscordDashboard({ onBack }) {
                 disabled={isLoading}
                 style={{ marginTop: '1rem' }}
               >
-                Test értesítés küldése
+                Send test notification
               </button>
             </div>
           </div>
@@ -1576,11 +2066,11 @@ function DiscordDashboard({ onBack }) {
           <header className="header">
             <div className="header-top">
               <h1>Discord Dashboard</h1>
-              <button className="back-button" onClick={onBack}>Vissza a naptárhoz</button>
+              <button className="back-button" onClick={onBack}>Back to calendar</button>
             </div>
           </header>
           <div className="admin-card" style={{ textAlign: 'center', padding: '3rem' }}>
-            <p className="muted">Betöltés...</p>
+            <p className="muted">Loading...</p>
           </div>
         </div>
       </div>
@@ -1593,7 +2083,7 @@ function DiscordDashboard({ onBack }) {
         <header className="header">
           <div className="header-top">
             <h1>Discord Dashboard</h1>
-            <button className="back-button" onClick={onBack}>Vissza a naptárhoz</button>
+            <button className="back-button" onClick={onBack}>Back to calendar</button>
           </div>
         </header>
 
@@ -1602,17 +2092,17 @@ function DiscordDashboard({ onBack }) {
             <div className="login-hero">
               <span className="login-icon">💬</span>
               <div>
-                <h2>Discord bejelentkezés</h2>
-                <p className="muted login-subtitle">Jelentkezz be Discorddal, hogy beállítsd a bot értesítéseket.</p>
+                <h2>Discord sign in</h2>
+                <p className="muted login-subtitle">Sign in with Discord to configure bot notifications.</p>
               </div>
             </div>
-            <a className="primary-button" href="/api/discord/login">Belépés Discorddal</a>
+            <a className="primary-button" href="/api/discord/login">Sign in with Discord</a>
           </div>
         ) : (
           <div className="admin-grid">
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>Fiók</h2>
+                <h2>Account</h2>
               </div>
               <div className="discord-user-profile">
                 {user?.avatarUrl && (
@@ -1620,42 +2110,42 @@ function DiscordDashboard({ onBack }) {
                 )}
                 <p><strong>{user?.username}</strong></p>
               </div>
-              <button className="secondary-button" onClick={logout} disabled={isLoading}>Kijelentkezés</button>
+              <button className="secondary-button" onClick={logout} disabled={isLoading}>Sign out</button>
             </div>
 
             <div className="admin-card">
               <div className="admin-card-header">
-                <h2>🤖 Bot meghívása</h2>
+                <h2>🤖 Invite bot</h2>
               </div>
-              <p className="muted">Kattints az alábbi gombra, hogy meghívd a botot a szervereidre.</p>
+              <p className="muted">Click the button below to invite the bot to your servers.</p>
               <button 
                 className="primary-button" 
                 onClick={handleInviteBot}
                 disabled={isLoading}
               >
-                Bot hozzáadása a Discord szerverhez
+                Add bot to Discord server
               </button>
               {status && <p className="status-text">{status}</p>}
             </div>
 
             <div className="admin-card admin-card-full-width">
               <div className="admin-card-header">
-                <h2>📋 Szerverek kezelése</h2>
+                <h2>📋 Server management</h2>
                 <button
                   className="secondary-button"
                   onClick={refreshAdminGuilds}
                   disabled={isGuildsLoading || isLoading}
                 >
-                  Frissítés
+                  Refresh
                 </button>
               </div>
               {isGuildsLoading ? (
                 <div className="loading-container">
                   <div className="spinner"></div>
-                  <p className="muted">Szerverek betöltése...</p>
+                  <p className="muted">Loading servers...</p>
                 </div>
               ) : adminGuilds.length === 0 ? (
-                <p className="muted">Nincs olyan szerver, ahol admin jogokkal rendelkeznél és a bot benne lenne.</p>
+                <p className="muted">No servers found where you have admin rights and the bot is present.</p>
               ) : (
                 <div className="guilds-grid">
                   {adminGuilds.map((guild) => (
@@ -1680,7 +2170,7 @@ function DiscordDashboard({ onBack }) {
                           onClick={() => setSelectedGuildId(guild.id)}
                           disabled={isLoading}
                         >
-                          Ugrás a dashboardra
+                          Open dashboard
                         </button>
                       </div>
                     </div>

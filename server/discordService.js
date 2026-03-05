@@ -2,7 +2,7 @@ const axios = require('axios');
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://f1.markveber.hu';
-const PUBLIC_APP_BUTTON_LABEL = process.env.PUBLIC_APP_BUTTON_LABEL || 'F1 oldal megnyitása';
+const PUBLIC_APP_BUTTON_LABEL = process.env.PUBLIC_APP_BUTTON_LABEL || 'Open F1 calendar';
 
 // Retry logika Discord API rate limitek kezelésére
 async function retryRequest(requestFn, retries = 3, delay = 1000) {

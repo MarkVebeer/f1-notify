@@ -4,3 +4,4 @@ client/dist/
 *.db
 .env
 .DS_Store
+.env dev

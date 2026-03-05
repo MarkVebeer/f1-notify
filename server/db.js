@@ -18,6 +18,7 @@ function initDatabase() {
         lon REAL,
         timezone TEXT,
         date TEXT NOT NULL,
+        end_date TEXT,
         type TEXT,
         ics_uid TEXT UNIQUE,
         raw_summary TEXT,
@@ -32,6 +33,7 @@ function initDatabase() {
           name TEXT NOT NULL,
           location TEXT,
           date TEXT NOT NULL,
+          end_date TEXT,
           type TEXT DEFAULT 'custom',
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -45,9 +47,53 @@ function initDatabase() {
         addCityAndCircuitColumns();
         // Add lat/lon/timezone columns if they don't exist
         addLatLonTimezoneColumns();
+        // Add end_date column if it doesn't exist
+        addEndDateColumn();
+        // Add end_date column to custom_events if it doesn't exist
+        addCustomEndDateColumn();
         resolve();
       });
     });
+  });
+}
+
+function addEndDateColumn() {
+  db.all("PRAGMA table_info(races)", (err, columns) => {
+    if (err) {
+      console.error('Error checking table structure:', err);
+      return;
+    }
+
+    const hasEndDate = columns.some(col => col.name === 'end_date');
+    if (!hasEndDate) {
+      db.run("ALTER TABLE races ADD COLUMN end_date TEXT", (alterErr) => {
+        if (alterErr) {
+          console.error('Error adding end_date column:', alterErr);
+        } else {
+          console.log('Successfully added end_date column');
+        }
+      });
+    }
+  });
+}
+
+function addCustomEndDateColumn() {
+  db.all("PRAGMA table_info(custom_events)", (err, columns) => {
+    if (err) {
+      console.error('Error checking custom_events table structure:', err);
+      return;
+    }
+
+    const hasEndDate = columns.some(col => col.name === 'end_date');
+    if (!hasEndDate) {
+      db.run("ALTER TABLE custom_events ADD COLUMN end_date TEXT", (alterErr) => {
+        if (alterErr) {
+          console.error('Error adding end_date column to custom_events:', alterErr);
+        } else {
+          console.log('Successfully added end_date column to custom_events');
+        }
+      });
+    }
   });
 }
 
@@ -164,10 +210,10 @@ function getAllEvents() {
   return new Promise((resolve, reject) => {
     db.all(
       `
-        SELECT id, name, location, city, circuit_name, lat, lon, timezone, date, type, created_at, 'race' as source
+        SELECT id, name, location, city, circuit_name, lat, lon, timezone, date, end_date, type, created_at, 'race' as source
         FROM races
         UNION ALL
-        SELECT id, name, location, NULL as city, NULL as circuit_name, NULL as lat, NULL as lon, NULL as timezone, date, type, created_at, 'custom' as source
+        SELECT id, name, location, NULL as city, NULL as circuit_name, NULL as lat, NULL as lon, NULL as timezone, date, end_date, type, created_at, 'custom' as source
         FROM custom_events
         ORDER BY date ASC
       `,
@@ -180,14 +226,14 @@ function getAllEvents() {
 }
 
 // Add a race
-function addRace({ name, location, date, type, ics_uid, raw_summary, city, circuit_name, lat, lon, timezone }) {
+function addRace({ name, location, date, end_date, type, ics_uid, raw_summary, city, circuit_name, lat, lon, timezone }) {
   return new Promise((resolve, reject) => {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO races (name, location, date, type, ics_uid, raw_summary, city, circuit_name, lat, lon, timezone)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO races (name, location, date, end_date, type, ics_uid, raw_summary, city, circuit_name, lat, lon, timezone)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    stmt.run(name, location, date, type, ics_uid, raw_summary || null, city || null, circuit_name || null, lat ?? null, lon ?? null, timezone || null, function(err) {
+    stmt.run(name, location, date, end_date || null, type, ics_uid, raw_summary || null, city || null, circuit_name || null, lat ?? null, lon ?? null, timezone || null, function(err) {
       if (err) reject(err);
       else resolve(this.lastID);
     });
@@ -197,14 +243,14 @@ function addRace({ name, location, date, type, ics_uid, raw_summary, city, circu
 }
 
 // Add a custom event
-function addCustomEvent({ name, location, date, type, description }) {
+function addCustomEvent({ name, location, date, end_date, type, description }) {
   return new Promise((resolve, reject) => {
     const stmt = db.prepare(`
-      INSERT INTO custom_events (name, location, date, type, description)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO custom_events (name, location, date, end_date, type, description)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(name, location, date, type || 'custom', description || null, function(err) {
+    stmt.run(name, location, date, end_date || null, type || 'custom', description || null, function(err) {
       if (err) reject(err);
       else resolve(this.lastID);
     });
@@ -237,11 +283,11 @@ function getUpcomingEvents(windowHours = 72) {
     const until = new Date(now.getTime() + windowHours * 60 * 60 * 1000);
     db.all(
       `
-        SELECT id, name, location, city, circuit_name, lat, lon, timezone, date, type, created_at, 'race' as source
+        SELECT id, name, location, city, circuit_name, lat, lon, timezone, date, end_date, type, created_at, 'race' as source
         FROM races
         WHERE date BETWEEN ? AND ?
         UNION ALL
-        SELECT id, name, location, NULL as city, NULL as circuit_name, NULL as lat, NULL as lon, NULL as timezone, date, type, created_at, 'custom' as source
+        SELECT id, name, location, NULL as city, NULL as circuit_name, NULL as lat, NULL as lon, NULL as timezone, date, end_date, type, created_at, 'custom' as source
         FROM custom_events
         WHERE date BETWEEN ? AND ?
         ORDER BY date ASC

@@ -156,23 +156,23 @@ function toDiscordImageUrl(layoutSvgUrl) {
 
 async function buildRaceEmbed(race, config, leadMinutes) {
   const start = new Date(race.date);
-  const locale = 'hu-HU';
+  const locale = 'en-GB';
 
   // Different message based on lead_minutes
   let description;
   if (leadMinutes === 0) {
-    description = `🚦 Az esemény most kezdődik!`;
+    description = `🚦 The event is starting now!`;
   } else if (leadMinutes === 1) {
-    description = `Az esemény 1 percen belül kezdődik!`;
+    description = `The event starts in 1 minute!`;
   } else if (leadMinutes < 60) {
-    description = `Az esemény ${leadMinutes} percen belül kezdődik!`;
+    description = `The event starts in ${leadMinutes} minutes!`;
   } else {
     const hours = Math.floor(leadMinutes / 60);
     const minutes = leadMinutes % 60;
     if (minutes === 0) {
-      description = `Az esemény ${hours} órán belül kezdődik!`;
+      description = `The event starts in ${hours} hour${hours === 1 ? '' : 's'}!`;
     } else {
-      description = `Az esemény ${hours} óra ${minutes} percen belül kezdődik!`;
+      description = `The event starts in ${hours} hour${hours === 1 ? '' : 's'} and ${minutes} minute${minutes === 1 ? '' : 's'}!`;
     }
   }
 
@@ -195,13 +195,13 @@ async function buildRaceEmbed(race, config, leadMinutes) {
   }
 
   const fields = [
-    { name: 'Típus', value: getEventTypeName(race.type), inline: true },
-    { name: 'Kezdés', value: start.toLocaleString(locale, { timeZone: config.timezone }), inline: true },
-    { name: 'Helyszín', value: locationValue, inline: false }
+    { name: 'Type', value: getEventTypeName(race.type), inline: true },
+    { name: 'Start', value: start.toLocaleString(locale, { timeZone: config.timezone }), inline: true },
+    { name: 'Location', value: locationValue, inline: false }
   ];
 
   if (race.circuit_name) {
-    fields.push({ name: '🏎️ Pálya', value: race.circuit_name, inline: false });
+    fields.push({ name: '🏎️ Circuit', value: race.circuit_name, inline: false });
   }
 
   const trackLayoutUrl = await resolveTrackLayoutUrl(race);

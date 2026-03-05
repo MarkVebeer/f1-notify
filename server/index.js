@@ -205,9 +205,9 @@ app.get('/api/races', async (req, res) => {
 
 app.post('/api/races', async (req, res) => {
   try {
-    const { name, location, date, type } = req.body;
-    const id = await db.addRace({ name, location, date, type });
-    res.status(201).json({ id, name, location, date, type });
+    const { name, location, date, end_date, type } = req.body;
+    const id = await db.addRace({ name, location, date, end_date, type });
+    res.status(201).json({ id, name, location, date, end_date, type });
   } catch (error) {
     console.error('Error adding race:', error);
     res.status(500).json({ error: 'Failed to add race' });
@@ -324,13 +324,13 @@ app.get('/api/admin/all-events', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/custom-events', requireAdmin, async (req, res) => {
   try {
-    const { name, location, date, type, description } = req.body;
+    const { name, location, date, end_date, type, description } = req.body;
     if (!name || !date) {
       return res.status(400).json({ error: 'Name and date are required' });
     }
 
-    const id = await db.addCustomEvent({ name, location, date, type, description });
-    res.status(201).json({ id, name, location, date, type: type || 'custom', description });
+    const id = await db.addCustomEvent({ name, location, date, end_date, type, description });
+    res.status(201).json({ id, name, location, date, end_date: end_date || null, type: type || 'custom', description });
   } catch (error) {
     console.error('Error adding custom event:', error);
     res.status(500).json({ error: 'Failed to add custom event' });
@@ -821,13 +821,13 @@ app.post('/api/admin/weather-debug', requireAdmin, async (req, res) => {
       : (precipitationText !== '—' ? precipitationText : precipitationProbabilityText);
 
     const embed = {
-      title: '🌦️ Időjárás előrejelzés',
+      title: '🌦️ Weather forecast',
       description: `${locationName}\n${date}`,
       color: 0x4aa3ff,
       fields: [
-        { name: 'Hőmérséklet\n(min, max, avg)', value: temperatureText, inline: true },
-        { name: 'Csapadék', value: combinedPrecipitationText, inline: true },
-        { name: 'Szél\n(avg, max)', value: windText, inline: true }
+        { name: 'Temperature\n(min, max, avg)', value: temperatureText, inline: true },
+        { name: 'Precipitation', value: combinedPrecipitationText, inline: true },
+        { name: 'Wind\n(avg, max)', value: windText, inline: true }
       ],
       image: { url: meteogramUrl },
       footer: { text: `meteoblue • ${location.timezone || 'UTC'}` }

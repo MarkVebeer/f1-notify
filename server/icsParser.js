@@ -140,6 +140,7 @@ function processAndGroupEvents(events, locationsData = []) {
       }
       
       const eventDate = event.start ? new Date(event.start) : new Date();
+      const eventEndDate = event.end ? new Date(event.end) : null;
       const dateKey = eventDate.toISOString().split('T')[0]; // YYYY-MM-DD
       
       if (!groupedByDate[dateKey]) {
@@ -171,6 +172,7 @@ function processAndGroupEvents(events, locationsData = []) {
         lon: locationMatch.lon ?? null,
         timezone,
         date: eventDate.toISOString(),
+        end_date: eventEndDate ? eventEndDate.toISOString() : null,
         type: determineRaceType(summary),
         ics_uid: event.uid || `${Date.now()}-${Math.random()}`,
         raw_summary: summary
