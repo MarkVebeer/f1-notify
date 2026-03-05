@@ -559,6 +559,7 @@ async function runWeatherNotifications() {
       if (!weatherChannelId) {
         continue;
       }
+      const weatherRoleId = weatherConfig.role_id || null;
 
       const grouped = groupRacesByName(events.filter((event) => new Date(event.date) >= now));
       const nextWeekend = pickNextWeekend(grouped);
@@ -609,7 +610,7 @@ async function runWeatherNotifications() {
           config,
           eventTimeZone
         });
-        await sendChannelMessage(weatherChannelId, embed);
+        await sendChannelMessage(weatherChannelId, embed, weatherRoleId);
         await discordDb.logWeatherNotification({
           guild_id: weatherConfig.guild_id,
           weekend_key: weekendKey,
@@ -636,6 +637,7 @@ async function sendWeatherNotificationNow(guildId) {
   if (!weatherChannelId) {
     throw new Error('Weather channel not configured');
   }
+  const weatherRoleId = weatherConfig?.role_id || null;
 
   const events = await db.getAllEvents();
   if (!events.length) {
@@ -669,7 +671,7 @@ async function sendWeatherNotificationNow(guildId) {
     eventTimeZone
   });
 
-  await sendChannelMessage(weatherChannelId, embed);
+  await sendChannelMessage(weatherChannelId, embed, weatherRoleId);
   return { weekendName: nextWeekend.name };
 }
 
@@ -705,6 +707,7 @@ async function runRaceDayWeatherNotifications() {
       if (!weatherChannelId) {
         continue;
       }
+      const weatherRoleId = weatherConfig.role_id || null;
 
       const timeZone = config.timezone || 'UTC';
       const grouped = groupRacesByName(events.filter((event) => new Date(event.date) >= now));
@@ -760,7 +763,7 @@ async function runRaceDayWeatherNotifications() {
             eventTimeZone
           });
 
-          await sendChannelMessage(weatherChannelId, embed);
+          await sendChannelMessage(weatherChannelId, embed, weatherRoleId);
           
           await discordDb.logRaceDayWeatherNotification({
             guild_id: weatherConfig.guild_id,

@@ -134,39 +134,13 @@ function normalizeSearchText(value) {
     .trim()
 }
 
-function getTimeZoneComparableMs(dateInput, timeZone) {
-  const date = new Date(dateInput)
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).formatToParts(date)
-
-  const partMap = parts.reduce((result, part) => {
-    if (part.type !== 'literal') {
-      result[part.type] = part.value
-    }
-    return result
-  }, {})
-
-  return Date.UTC(
-    Number(partMap.year),
-    Number(partMap.month) - 1,
-    Number(partMap.day),
-    Number(partMap.hour),
-    Number(partMap.minute),
-    Number(partMap.second)
-  )
+function getEventTimestampMs(dateInput) {
+  return new Date(dateInput).getTime()
 }
 
-function getFeaturedWeekend(groupedRaces, timeZone, nowDate = new Date()) {
+function getFeaturedWeekend(groupedRaces, nowDate = new Date()) {
   const threeHoursInMs = 3 * 60 * 60 * 1000
-  const nowComparableMs = getTimeZoneComparableMs(nowDate, timeZone)
+  const nowTimestampMs = nowDate.getTime()
 
   const weekends = Object.entries(groupedRaces)
     .map(([key, grandPrix]) => {
@@ -177,8 +151,8 @@ function getFeaturedWeekend(groupedRaces, timeZone, nowDate = new Date()) {
 
       const firstEvent = sortedEvents[0]
       const lastEvent = sortedEvents[sortedEvents.length - 1]
-      const startMs = getTimeZoneComparableMs(firstEvent.date, timeZone)
-      const lastEventStartMs = getTimeZoneComparableMs(lastEvent.date, timeZone)
+      const startMs = getEventTimestampMs(firstEvent.date)
+      const lastEventStartMs = getEventTimestampMs(lastEvent.date)
 
       return {
         key,
@@ -192,7 +166,7 @@ function getFeaturedWeekend(groupedRaces, timeZone, nowDate = new Date()) {
     .filter(Boolean)
     .sort((a, b) => a.startMs - b.startMs)
 
-  const currentWeekend = weekends.find(weekend => nowComparableMs >= weekend.startMs && nowComparableMs < weekend.currentWindowEndMs)
+  const currentWeekend = weekends.find(weekend => nowTimestampMs >= weekend.startMs && nowTimestampMs < weekend.currentWindowEndMs)
   if (currentWeekend) {
     return {
       mode: 'current',
@@ -200,7 +174,7 @@ function getFeaturedWeekend(groupedRaces, timeZone, nowDate = new Date()) {
     }
   }
 
-  const nextWeekend = weekends.find(weekend => nowComparableMs < weekend.startMs)
+  const nextWeekend = weekends.find(weekend => nowTimestampMs < weekend.startMs)
   if (nextWeekend) {
     return {
       mode: 'next',
@@ -211,42 +185,42 @@ function getFeaturedWeekend(groupedRaces, timeZone, nowDate = new Date()) {
   return null
 }
 
-function getNextWeekendEvent(featuredWeekend, timeZone, nowDate = new Date()) {
+function getNextWeekendEvent(featuredWeekend, nowDate = new Date()) {
   if (!featuredWeekend?.grandPrix?.events?.length) {
     return null
   }
 
   const threeHoursInMs = 3 * 60 * 60 * 1000
-  const nowComparableMs = getTimeZoneComparableMs(nowDate, timeZone)
+  const nowTimestampMs = nowDate.getTime()
   const sortedEvents = [...featuredWeekend.grandPrix.events].sort((a, b) => new Date(a.date) - new Date(b.date))
 
   const runningEvent = sortedEvents.find(event => {
-    const eventStartComparableMs = getTimeZoneComparableMs(event.date, timeZone)
-    const eventEndComparableMs = event.end_date
-      ? getTimeZoneComparableMs(event.end_date, timeZone)
-      : eventStartComparableMs + threeHoursInMs
+    const eventStartTimestampMs = getEventTimestampMs(event.date)
+    const eventEndTimestampMs = event.end_date
+      ? getEventTimestampMs(event.end_date)
+      : eventStartTimestampMs + threeHoursInMs
 
-    return nowComparableMs >= eventStartComparableMs && nowComparableMs < eventEndComparableMs
+    return nowTimestampMs >= eventStartTimestampMs && nowTimestampMs < eventEndTimestampMs
   })
 
   if (runningEvent) {
-    const runningEventEndComparableMs = runningEvent.end_date
-      ? getTimeZoneComparableMs(runningEvent.end_date, timeZone)
-      : getTimeZoneComparableMs(runningEvent.date, timeZone) + threeHoursInMs
+    const runningEventEndTimestampMs = runningEvent.end_date
+      ? getEventTimestampMs(runningEvent.end_date)
+      : getEventTimestampMs(runningEvent.date) + threeHoursInMs
 
     return {
       event: runningEvent,
       isRunning: true,
-      countdownTargetComparableMs: runningEventEndComparableMs
+      countdownTargetTimestampMs: runningEventEndTimestampMs
     }
   }
 
-  const nextEvent = sortedEvents.find(event => getTimeZoneComparableMs(event.date, timeZone) > nowComparableMs)
+  const nextEvent = sortedEvents.find(event => getEventTimestampMs(event.date) > nowTimestampMs)
   if (nextEvent) {
     return {
       event: nextEvent,
       isRunning: false,
-      countdownTargetComparableMs: getTimeZoneComparableMs(nextEvent.date, timeZone)
+      countdownTargetTimestampMs: getEventTimestampMs(nextEvent.date)
     }
   }
 
@@ -744,15 +718,15 @@ function App() {
 
   const grandPrixCount = Object.keys(groupedRaces).length
   const selectedGrandPrix = selectedGrandPrixKey ? groupedRaces[selectedGrandPrixKey] : null
-  const featuredWeekend = getFeaturedWeekend(groupedRaces, timezone, nowTick)
-  const featuredEventState = featuredWeekend ? getNextWeekendEvent(featuredWeekend, timezone, nowTick) : null
+  const featuredWeekend = getFeaturedWeekend(groupedRaces, nowTick)
+  const featuredEventState = featuredWeekend ? getNextWeekendEvent(featuredWeekend, nowTick) : null
   const featuredNextEvent = featuredEventState?.event || null
   const isFeaturedWeekendEventRunning = Boolean(featuredEventState?.isRunning)
   const featuredTrackLayoutUrl = featuredWeekend ? getTrackLayoutUrl(featuredWeekend.grandPrix.location) : null
   const featuredShowTrackLayout = featuredTrackLayoutUrl && !failedTrackLayouts[featuredTrackLayoutUrl]
-  const nowComparableMs = getTimeZoneComparableMs(nowTick, timezone)
+  const nowTimestampMs = nowTick.getTime()
   const featuredCountdownMs = featuredEventState
-    ? Math.max(0, featuredEventState.countdownTargetComparableMs - nowComparableMs)
+    ? Math.max(0, featuredEventState.countdownTargetTimestampMs - nowTimestampMs)
     : 0
   const featuredCountdownText = featuredEventState ? formatCountdown(featuredCountdownMs) : 'Live'
   const modalAnimationStyle = {
@@ -1454,7 +1428,8 @@ function DiscordDashboard({ onBack }) {
   const [weatherConfig, setWeatherConfig] = useState({
     channel_id: '',
     enabled: false,
-    race_day_lead_minutes: ''
+    race_day_lead_minutes: '',
+    role_id: ''
   })
 
   const showToast = (message, type = 'success') => {
@@ -1591,13 +1566,15 @@ function DiscordDashboard({ onBack }) {
         setWeatherConfig({
           channel_id: response.data.channel_id || config.channel_id || '',
           enabled: response.data.enabled ? true : false,
-          race_day_lead_minutes: response.data.race_day_lead_minutes ?? ''
+          race_day_lead_minutes: response.data.race_day_lead_minutes ?? '',
+          role_id: response.data.role_id || ''
         })
       } else {
         setWeatherConfig({
           channel_id: config.channel_id || '',
           enabled: false,
-          race_day_lead_minutes: ''
+          race_day_lead_minutes: '',
+          role_id: ''
         })
       }
     } catch {
@@ -1725,7 +1702,8 @@ function DiscordDashboard({ onBack }) {
         guild_id: selectedGuildId,
         channel_id: weatherConfig.channel_id || config.channel_id,
         enabled: Boolean(weatherConfig.enabled),
-        race_day_lead_minutes: weatherConfig.race_day_lead_minutes ? Number(weatherConfig.race_day_lead_minutes) : null
+        race_day_lead_minutes: weatherConfig.race_day_lead_minutes ? Number(weatherConfig.race_day_lead_minutes) : null,
+        role_id: weatherConfig.role_id || null
       })
       showToast('Weather notification configured!', 'success')
       await fetchWeatherConfig(selectedGuildId)
@@ -1911,6 +1889,25 @@ function DiscordDashboard({ onBack }) {
                     />
                     <span className="checkbox-text">Enable weekend weather notifications</span>
                   </label>
+                </div>
+                <div className="form-row">
+                  <label>Role mention (optional)</label>
+                  <select
+                    value={weatherConfig.role_id}
+                    onChange={(e) => setWeatherConfig({ ...weatherConfig, role_id: e.target.value })}
+                    disabled={isLoading}
+                  >
+                    <option value="">No role</option>
+                    {roles
+                      .filter(r => r.name !== '@everyone')
+                      .sort((a, b) => b.position - a.position)
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                  </select>
+                  <small className="muted" style={{ marginTop: '0.5rem', display: 'block' }}>
+                    Selected role is mentioned in weather notifications.
+                  </small>
                 </div>
                 <div className="form-row">
                   <label>Race-day notification (minutes)</label>

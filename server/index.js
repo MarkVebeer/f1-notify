@@ -17,7 +17,6 @@ const { startDiscordPresence } = require('./discordPresence');
 const { startScheduler } = require('./scheduler');
 const { syncCalendar } = require('./icsParser');
 const { runDiscordNotifications } = require('./discordWorker');
-const { sendWeatherNotificationNow } = require('./weatherWorker');
 const { searchLocation, fetchBasicDayForecast, pickDayForecast, buildMeteogramImageUrl } = require('./meteoblueService');
 
 const app = express();
@@ -542,7 +541,7 @@ app.post('/api/discord/config', requireDiscordAuth, async (req, res) => {
 
 app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => {
   try {
-    const { guild_id, channel_id, enabled, race_day_lead_minutes } = req.body;
+    const { guild_id, channel_id, enabled, role_id, race_day_lead_minutes } = req.body;
     if (!guild_id) {
       return res.status(400).json({ error: 'Missing guild_id' });
     }
@@ -562,6 +561,7 @@ app.post('/api/discord/weather-config', requireDiscordAuth, async (req, res) => 
       guild_id,
       channel_id: channel_id || null,
       enabled: enabledValue,
+      role_id: role_id || null,
       race_day_lead_minutes: raceDayLeadValue
     });
 
@@ -625,11 +625,23 @@ app.post('/api/discord/weather-test', requireDiscordAuth, async (req, res) => {
       return res.status(400).json({ error: 'Guild ID required' });
     }
 
-    const result = await sendWeatherNotificationNow(guild_id);
-    res.json({ success: true, weekend: result.weekendName });
+    const weatherConfig = await discordDb.getWeatherConfigByGuild(guild_id);
+    if (!weatherConfig || !weatherConfig.channel_id) {
+      return res.status(404).json({ error: 'Weather notifications not configured' });
+    }
+
+    const testEmbed = {
+      title: '🌦️ Weather Test Notification',
+      description: 'This is a simple weather test notification from F1 Calendar.',
+      color: 0x3498db,
+      footer: { text: 'F1 Calendar • Discord Notify' }
+    };
+
+    await discord.sendChannelMessage(weatherConfig.channel_id, testEmbed, weatherConfig.role_id || null);
+    res.json({ success: true, message: 'Weather test notification sent' });
   } catch (error) {
     console.error('Failed to send weather test:', error.message || error);
-    res.status(500).json({ error: error.message || 'Failed to send weather test' });
+    res.status(500).json({ error: 'Failed to send weather test' });
   }
 });
 
