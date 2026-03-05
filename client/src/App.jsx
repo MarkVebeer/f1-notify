@@ -609,7 +609,6 @@ function App() {
   const formatDate = (dateString) => {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-GB', {
-      year: 'numeric',
       month: 'long',
       day: 'numeric',
       hour: '2-digit',
@@ -779,7 +778,7 @@ function App() {
 
         <header className="header">
           <div className="header-top">
-            <h1>F1 Calendar 2026</h1>
+            <h1>F1 Calendar</h1>
             <div className="gp-search">
               <input
                 type="search"
@@ -1369,8 +1368,8 @@ function AdminDashboard({ onBack }) {
                     <div key={event.id} className="custom-event-item">
                       <div className="custom-event-info">
                         <strong>{event.name}</strong>
-                        <span>{new Date(event.date).toLocaleString('en-GB')}</span>
-                        {event.end_date && <span>Ends: {new Date(event.end_date).toLocaleString('en-GB')}</span>}
+                        <span>{new Date(event.date).toLocaleString('en-GB', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        {event.end_date && <span>Ends: {new Date(event.end_date).toLocaleString('en-GB', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
                         {event.location && <span>📍 {event.location}</span>}
                         {event.description && <span>{event.description}</span>}
                       </div>
