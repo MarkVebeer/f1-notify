@@ -4,10 +4,12 @@
   "description": "F1 verseny naptár alkalmazás ICS szinkronizációval",
   "main": "server/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
     "server": "nodemon server/index.js",
+    "server:dev": "cross-env NODE_ENV=development PORT=3002 FRONTEND_URL=http://localhost:3001 CORS_ORIGIN=http://localhost:3001 nodemon server/index.js",
     "client": "cd client && npm run dev",
-    "build": "cd client && npm run build",
+    "client:dev": "cd client && npm run dev -- --port 3001",
+    "build": "cd client && npm i && npm run build",
     "start": "node startprod.js"
   },
   "keywords": [
@@ -36,6 +38,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
     "nodemon": "^3.0.2"
   }
 }
