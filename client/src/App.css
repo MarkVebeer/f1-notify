@@ -354,128 +354,155 @@ body {
 }
 
 .races-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 1rem;
   margin-bottom: 2rem;
   padding: 0 0.25rem;
 }
 
-.weekend-group {
+.race-card {
   background: var(--card-bg);
-  border-radius: 10px;
-  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.weekend-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
+  overflow: hidden;
   cursor: pointer;
-  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  border-left: 3px solid var(--primary);
-  background: var(--card-bg);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.weekend-header:hover {
-  background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+.race-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
 }
 
-.weekend-header:active {
-  transform: scale(0.98);
+.race-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
-.weekend-info {
-  flex: 1;
+.race-card-layout {
+  margin: 0.9rem;
+  border-radius: 16px;
+  border: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  min-height: 190px;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0.8rem;
 }
 
-.weekend-name {
-  font-size: 1.1rem;
+.race-card-track-image {
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+  display: block;
+}
+
+.race-card-layout-placeholder {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.race-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0 1rem 1rem;
+}
+
+.race-card-title {
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--text);
   margin: 0;
 }
 
-.weekend-location-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.weekend-location {
-  font-size: 0.8rem;
+.race-card-location {
+  margin: 0;
+  font-size: 0.9rem;
   color: var(--text-secondary);
 }
 
-.weekend-circuit {
-  font-size: 0.8rem;
-  color: var(--primary);
-  font-weight: 500;
+.race-card-circuit {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text);
+  font-weight: 600;
 }
 
-.weekend-count {
-  font-size: 0.75rem;
+.race-card-count {
+  margin-top: 0.25rem;
+  width: fit-content;
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.05);
-  padding: 0.25rem 0.5rem;
+  padding: 0.28rem 0.55rem;
   border-radius: 8px;
 }
 
-.weekend-toggle {
+.gp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  padding: 0.85rem;
+  z-index: 1000;
+}
+
+.gp-modal {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  padding: 1rem;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.gp-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.gp-modal-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.gp-modal-close {
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--text);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  transition: all 0.2s ease;
+  width: 34px;
+  height: 34px;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.weekend-header:hover .weekend-toggle {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.toggle-icon {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  transition: transform 0.2s ease;
-}
-
-.weekend-events {
+.gp-modal-events {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.track-layout-card {
-  background: var(--card-bg);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  padding: 0.75rem;
-}
-
-.track-layout-image {
-  width: 100%;
-  max-height: 220px;
-  object-fit: contain;
-  display: block;
+  gap: 0.6rem;
 }
 
 .race-item {
-  background: var(--card-bg);
+  background: var(--secondary);
   border-radius: 8px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-left: 3px solid var(--primary);
   transition: all 0.2s ease;
 }
@@ -511,6 +538,7 @@ body {
   font-size: 1.5rem;
   flex-shrink: 0;
   line-height: 1;
+  filter: grayscale(1) saturate(0) contrast(1.05);
 }
 
 .race-info {
@@ -592,32 +620,32 @@ body {
   }
 
   .races-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.125rem;
   }
 
-  .weekend-header {
+  .race-card-layout {
+    min-height: 205px;
+  }
+
+  .race-card-track-image {
+    height: 170px;
+  }
+
+  .race-card-title {
+    font-size: 1.15rem;
+  }
+
+  .race-card-location {
+    font-size: 0.95rem;
+  }
+
+  .gp-modal {
     padding: 1.25rem;
   }
 
-  .weekend-name {
-    font-size: 1.25rem;
-  }
-
-  .weekend-location {
-    font-size: 0.85rem;
-  }
-
-  .weekend-count {
-    font-size: 0.8rem;
-  }
-
-  .weekend-events {
-    gap: 0.625rem;
-    padding: 0.75rem;
-  }
-
-  .track-layout-image {
-    max-height: 260px;
+  .gp-modal-header h2 {
+    font-size: 1.35rem;
   }
 
   .race-content {
@@ -668,52 +696,13 @@ body {
     margin-bottom: 3rem;
   }
 
-  .weekend-group {
-    border-radius: 12px;
+  .race-card-layout {
+    min-height: 220px;
+    margin: 1rem;
   }
 
-  .weekend-header {
-    padding: 1.5rem;
-    border-left-width: 4px;
-  }
-
-  .weekend-header:hover {
-    transform: none;
-  }
-
-  .weekend-name {
-    font-size: 1.5rem;
-  }
-
-  .weekend-location {
-    font-size: 0.9rem;
-  }
-
-  .weekend-count {
-    font-size: 0.85rem;
-  }
-
-  .weekend-toggle {
-    width: 36px;
-    height: 36px;
-  }
-
-  .toggle-icon {
-    font-size: 0.875rem;
-  }
-
-  .weekend-events {
-    gap: 0.75rem;
-    padding: 1rem;
-  }
-
-  .track-layout-card {
-    padding: 1rem;
-    border-radius: 10px;
-  }
-
-  .track-layout-image {
-    max-height: 300px;
+  .race-card-track-image {
+    height: 185px;
   }
 
   .race-item {
@@ -759,6 +748,16 @@ body {
     font-size: 0.9rem;
   }
 
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1120px;
+  }
+
+  .races-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
   .no-races {
     padding: 3rem;
     border-radius: 16px;

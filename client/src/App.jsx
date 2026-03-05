@@ -131,7 +131,7 @@ const TIMEZONES = (() => {
 function App() {
   const [races, setRaces] = useState([])
   const [loading, setLoading] = useState(true)
-  const [expandedWeekends, setExpandedWeekends] = useState({})
+  const [selectedGrandPrixKey, setSelectedGrandPrixKey] = useState(null)
   const [trackLayoutsByCountry, setTrackLayoutsByCountry] = useState({})
   const [failedTrackLayouts, setFailedTrackLayouts] = useState({})
   const [trackLayoutSources, setTrackLayoutSources] = useState({
@@ -270,12 +270,28 @@ function App() {
     }
   }
 
-  const toggleWeekend = (gpKey) => {
-    setExpandedWeekends(prev => ({
-      ...prev,
-      [gpKey]: !prev[gpKey]
-    }))
+  const openGrandPrixModal = (gpKey) => {
+    setSelectedGrandPrixKey(gpKey)
   }
+
+  const closeGrandPrixModal = () => {
+    setSelectedGrandPrixKey(null)
+  }
+
+  useEffect(() => {
+    if (!selectedGrandPrixKey) {
+      return undefined
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closeGrandPrixModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedGrandPrixKey])
 
   const formatDate = (dateString) => {
     const date = new Date(dateString)
@@ -333,6 +349,7 @@ function App() {
 
   const groupedRaces = groupRacesByGrandPrix()
   const grandPrixCount = Object.keys(groupedRaces).length
+  const selectedGrandPrix = selectedGrandPrixKey ? groupedRaces[selectedGrandPrixKey] : null
 
   if (isAdminView) {
     return (
@@ -380,65 +397,85 @@ function App() {
             </div>
           ) : (
             Object.entries(groupedRaces).map(([gpKey, grandPrix]) => {
-              const isExpanded = expandedWeekends[gpKey]
               const trackLayoutUrl = getTrackLayoutUrl(grandPrix.location)
               const showTrackLayout = trackLayoutUrl && !failedTrackLayouts[trackLayoutUrl]
               
               return (
-                <div key={gpKey} className="weekend-group">
-                  <div 
-                    className="weekend-header"
-                    onClick={() => toggleWeekend(gpKey)}
-                  >
-                    <div className="weekend-info">
-                      <h3 className="weekend-name">🏁 {grandPrix.name}</h3>
-                      <div className="weekend-location-info">
-                        {grandPrix.location && <span className="weekend-location">📍 {grandPrix.location}{grandPrix.city ? `, ${grandPrix.city}` : ''}</span>}
-                        {grandPrix.circuit_name && <span className="weekend-circuit">🏎️ {grandPrix.circuit_name}</span>}
-                      </div>
-                      <span className="weekend-count">{grandPrix.events.length} esemény</span>
-                    </div>
-                    <div className="weekend-toggle">
-                      <span className="toggle-icon">{isExpanded ? '▼' : '▶'}</span>
-                    </div>
+                <article
+                  key={gpKey}
+                  className="race-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openGrandPrixModal(gpKey)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      openGrandPrixModal(gpKey)
+                    }
+                  }}
+                >
+                  <div className="race-card-layout">
+                    {showTrackLayout ? (
+                      <img
+                        src={trackLayoutUrl}
+                        alt={`${grandPrix.name} track layout`}
+                        className="race-card-track-image"
+                        loading="lazy"
+                        onError={() => handleTrackLayoutImageError(trackLayoutUrl)}
+                      />
+                    ) : (
+                      <div className="race-card-layout-placeholder">Pályarajz nem elérhető</div>
+                    )}
                   </div>
-                  
-                  {isExpanded && (
-                    <div className="weekend-events">
-                      {showTrackLayout && (
-                        <div className="track-layout-card">
-                          <img
-                            src={trackLayoutUrl}
-                            alt={`${grandPrix.name} track layout`}
-                            className="track-layout-image"
-                            loading="lazy"
-                            onError={() => handleTrackLayoutImageError(trackLayoutUrl)}
-                          />
-                        </div>
-                      )}
-                      {grandPrix.events.map((race) => (
-                        <div key={race.id} className={`race-item ${getRaceTypeClass(race.type)}`}>
-                          <div className="race-content">
-                            <div className="race-emoji">{getRaceTypeEmoji(race.type)}</div>
-                            <div className="race-info">
-                              <div className="race-header">
-                                <h4 className="race-name">{getEventTypeName(race.type)}</h4>
-                                <span className="race-type">{race.type}</span>
-                              </div>
-                              <div className="race-details">
-                                <span className="race-date">{formatDate(race.date)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  <div className="race-card-body">
+                    <h3 className="race-card-title">{grandPrix.name}</h3>
+                    <p className="race-card-location">
+                      {grandPrix.location || 'Nincs helyszín'}
+                      {grandPrix.city ? `, ${grandPrix.city}` : ''}
+                    </p>
+                    <p className="race-card-circuit">{grandPrix.circuit_name || 'Nincs pályanév'}</p>
+                    <span className="race-card-count">{grandPrix.events.length} esemény</span>
+                  </div>
+                </article>
               )
             })
           )}
         </div>
+
+        {selectedGrandPrix && (
+          <div className="gp-modal-overlay" onClick={closeGrandPrixModal}>
+            <div
+              className="gp-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="gp-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="gp-modal-header">
+                <h2 id="gp-modal-title">{selectedGrandPrix.name}</h2>
+                <button className="gp-modal-close" onClick={closeGrandPrixModal} aria-label="Bezárás">×</button>
+              </div>
+              <div className="gp-modal-events">
+                {selectedGrandPrix.events.map((race) => (
+                  <div key={race.id} className={`race-item ${getRaceTypeClass(race.type)}`}>
+                    <div className="race-content">
+                      <div className="race-emoji">{getRaceTypeEmoji(race.type)}</div>
+                      <div className="race-info">
+                        <div className="race-header">
+                          <h4 className="race-name">{getEventTypeName(race.type)}</h4>
+                          <span className="race-type">{race.type}</span>
+                        </div>
+                        <div className="race-details">
+                          <span className="race-date">{formatDate(race.date)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <footer className="footer">
           <p>{grandPrixCount} Grand Prix • {races.length} esemény</p>
