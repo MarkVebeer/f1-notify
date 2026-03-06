@@ -296,12 +296,19 @@ function groupRacesByName(races) {
   return grouped;
 }
 
-function pickNextWeekend(groupedRaces) {
+function pickNextWeekend(groupedRaces, referenceDate = new Date()) {
   let nextWeekend = null;
   for (const [name, events] of groupedRaces.entries()) {
     const sortedEvents = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
     const startEvent = sortedEvents[0];
+    const endEvent = sortedEvents[sortedEvents.length - 1];
     if (!startEvent) continue;
+    if (!endEvent) continue;
+
+    // Ignore weekends that are already fully finished.
+    if (new Date(endEvent.date) < referenceDate) {
+      continue;
+    }
 
     if (!nextWeekend || new Date(startEvent.date) < new Date(nextWeekend.startEvent.date)) {
       nextWeekend = { name, events: sortedEvents, startEvent };
@@ -561,8 +568,8 @@ async function runWeatherNotifications() {
       }
       const weatherRoleId = weatherConfig.role_id || null;
 
-      const grouped = groupRacesByName(events.filter((event) => new Date(event.date) >= now));
-      const nextWeekend = pickNextWeekend(grouped);
+      const grouped = groupRacesByName(events);
+      const nextWeekend = pickNextWeekend(grouped, now);
 
       if (!nextWeekend) {
         continue;
@@ -645,8 +652,8 @@ async function sendWeatherNotificationNow(guildId) {
   }
 
   const now = new Date();
-  const grouped = groupRacesByName(events.filter((event) => new Date(event.date) >= now));
-  const nextWeekend = pickNextWeekend(grouped);
+  const grouped = groupRacesByName(events);
+  const nextWeekend = pickNextWeekend(grouped, now);
 
   if (!nextWeekend) {
     throw new Error('No upcoming race weekend found');
